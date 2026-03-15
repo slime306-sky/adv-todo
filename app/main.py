@@ -14,7 +14,7 @@ from app.core.errors import (
 )
 from app.core.security import is_supported_password_hash
 from app.models.user import User
-from app.routers import activities, audit_logs, auth, sub_tasks, tasks, users
+from app.routers import activities, audit_logs, auth, dashboard, sub_tasks, tasks, users
 
 Base.metadata.create_all(bind=engine)
 
@@ -69,3 +69,4 @@ app.include_router(users.router)
 app.include_router(activities.router)
 app.include_router(sub_tasks.router)
 app.include_router(audit_logs.router)
+app.include_router(dashboard.router)

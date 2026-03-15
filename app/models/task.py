@@ -10,6 +10,8 @@ from app.core.database import Base
 class TaskStatus(str, enum.Enum):
     complete = "complete"
     not_complete = "not complete"
+    in_progress = "in progress"
+    blocked = "blocked"
 
 
 class Task(Base):
@@ -20,7 +22,7 @@ class Task(Base):
     description = Column(String)
     start_date = Column(DateTime, default=datetime.utcnow)
     end_date = Column(DateTime)
-    status = Column(String, default="not complete")
+    status = Column(String, default=TaskStatus.not_complete.value)
     estimated_days = Column(Integer, default=0)
     estimated_hours = Column(Integer, default=0)
 

@@ -2,6 +2,8 @@
 
 from pydantic import BaseModel
 
+from app.models.task import TaskStatus
+
 
 class TaskCreate(BaseModel):
     title: str
@@ -18,7 +20,7 @@ class TaskResponse(BaseModel):
     description: str
     start_date: datetime
     end_date: datetime
-    status: str
+    status: TaskStatus
     estimated_days: int
     estimated_hours: int
     created_by: int
@@ -34,7 +36,7 @@ class TaskAdminResponse(BaseModel):
     id: int
     title: str
     description: str
-    status: str
+    status: TaskStatus
     estimated_days: int
     estimated_hours: int
     creator_username: str
@@ -73,6 +75,6 @@ class TaskUpdate(BaseModel):
     description: str | None = None
     start_date: datetime | None = None
     end_date: datetime | None = None
-    status: str | None = None
+    status: TaskStatus | None = None
     assigned_to: int | None = None
     assigned_to_username: str | None = None

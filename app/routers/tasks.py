@@ -253,7 +253,7 @@ def update_task(
     update_data = task_update.dict(exclude_unset=True)
     update_data.pop("assigned_to_username", None)
 
-    if "status" in update_data and task.status == "complete":
+    if "status" in update_data and task.status == TaskStatus.complete.value:
         raise api_error(
             status_code=400,
             code="TASK_ALREADY_COMPLETE",
@@ -307,7 +307,7 @@ def revise_task(
     if not task:
         raise api_error(status_code=404, code="TASK_NOT_FOUND", message="Task not found")
 
-    if task.status != "complete":
+    if task.status != TaskStatus.complete.value:
         raise api_error(
             status_code=400,
             code="TASK_NOT_COMPLETE",
@@ -326,7 +326,7 @@ def revise_task(
         description=task.description,
         start_date=task.start_date,
         end_date=task.end_date,
-        status="not complete",
+        status=TaskStatus.not_complete.value,
         estimated_days=0,
         estimated_hours=0,
         created_by=current_user.id,

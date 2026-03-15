@@ -5,6 +5,7 @@
     ActivityUpdate,
 )
 from app.schemas.audit_log import AuditLogListResponse, AuditLogResponse
+from app.schemas.dashboard import DashboardRecentTask, DashboardResponse
 from app.schemas.auth import Token
 from app.schemas.sub_task import (
     SubTaskCreate,
@@ -42,6 +43,8 @@ __all__ = [
     "ActivityListResponse",
     "AuditLogResponse",
     "AuditLogListResponse",
+    "DashboardRecentTask",
+    "DashboardResponse",
     "SubTaskCreate",
     "SubTaskUpdate",
     "SubTaskResponse",
