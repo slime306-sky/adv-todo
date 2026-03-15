@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 fastapi
 uvicorn
 sqlalchemy
@@ -5,3 +6,12 @@ python-jose
 passlib[argon2]
 psycopg2-binary
 python-multipart
+=======
+fastapi
+uvicorn
+sqlalchemy
+python-jose
+passlib[argon2]
+psycopg2-binary
+python-multipart
+>>>>>>> 9c962f1627ff7435b1f0ba63448f07959fba9ec1

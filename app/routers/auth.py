@@ -56,18 +56,38 @@ def login(
     form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)
 ):
     user = db.query(User).filter(User.username == form_data.username).first()
-    if not user or not is_supported_password_hash(user.password):
+    if not user:
         raise api_error(
             status_code=401,
             code="INVALID_CREDENTIALS",
             message="Invalid credentials",
         )
 
-    if not verify_password(form_data.password, user.password):
-        raise api_error(
-            status_code=401,
-            code="INVALID_CREDENTIALS",
-            message="Invalid credentials",
+    if is_supported_password_hash(user.password):
+        if not verify_password(form_data.password, user.password):
+            raise api_error(
+                status_code=401,
+                code="INVALID_CREDENTIALS",
+                message="Invalid credentials",
+            )
+    else:
+        # Legacy fallback: allow one successful plaintext login, then upgrade to hash.
+        if not user.password or form_data.password != user.password:
+            raise api_error(
+                status_code=401,
+                code="INVALID_CREDENTIALS",
+                message="Invalid credentials",
+            )
+
+        user.password = hash_password(form_data.password)
+        log_audit_event(
+            db=db,
+            action="PASSWORD_MIGRATION",
+            entity_type="user",
+            entity_id=user.id,
+            user_id=user.id,
+            message="Legacy plaintext password migrated to hash on login",
+            details={"username": user.username},
         )
 
     log_audit_event(

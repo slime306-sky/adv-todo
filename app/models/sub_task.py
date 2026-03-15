@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 import enum
 from datetime import datetime
 
@@ -28,3 +29,35 @@ class SubTask(Base):
 
     task = relationship("Task", backref="sub_tasks")
     creator = relationship("User")
+=======
+import enum
+from datetime import datetime
+
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, String
+from sqlalchemy.orm import relationship
+
+from app.core.database import Base
+
+
+class SubTaskStatus(str, enum.Enum):
+    complete = "complete"
+    not_complete = "not complete"
+
+
+class SubTask(Base):
+    __tablename__ = "sub_tasks"
+
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String, nullable=False)
+    description = Column(String)
+    status = Column(String, default=SubTaskStatus.not_complete.value)
+    estimated_days = Column(Integer, default=0)
+    estimated_hours = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    task_id = Column(Integer, ForeignKey("tasks.id"), nullable=False)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
+
+    task = relationship("Task", backref="sub_tasks")
+    creator = relationship("User")
+>>>>>>> 9c962f1627ff7435b1f0ba63448f07959fba9ec1
