@@ -216,7 +216,9 @@ Success response (`200 OK`):
 ```json
 {
   "access_token": "<jwt>",
-  "token_type": "bearer"
+  "token_type": "bearer",
+  "username": "alice",
+  "role": "user"
 }
 ```
 
@@ -865,7 +867,9 @@ Error responses:
 ```json
 {
   "access_token": "string",
-  "token_type": "string"
+  "token_type": "string",
+  "username": "string",
+  "role": "string"
 }
 ```
 

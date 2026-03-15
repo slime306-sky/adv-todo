@@ -101,7 +101,12 @@ def login(
     db.commit()
 
     token = create_access_token({"sub": user.username, "role": user.role})
-    return {"access_token": token, "token_type": "bearer"}
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "username": user.username,
+        "role": user.role,
+    }
 
 
 @router.post("/change-password")
