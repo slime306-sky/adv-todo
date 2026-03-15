@@ -1,6 +1,6 @@
 ﻿from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, or_
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.core.audit import log_audit_event
 from app.core.errors import api_error
@@ -21,6 +21,28 @@ from app.schemas.task import (
 )
 
 router = APIRouter(tags=["tasks"])
+
+
+def _serialize_task(task: Task, include_sub_tasks: bool = False):
+    payload = {
+        "id": task.id,
+        "title": task.title,
+        "description": task.description,
+        "start_date": task.start_date,
+        "end_date": task.end_date,
+        "status": task.status,
+        "estimated_days": task.estimated_days,
+        "estimated_hours": task.estimated_hours,
+        "created_by": task.creator.username if task.creator else str(task.created_by),
+        "assigned_to": task.assignee.username if task.assignee else str(task.assigned_to),
+        "version": task.version,
+        "parent_task_id": task.parent_task_id,
+    }
+
+    if include_sub_tasks:
+        payload["sub_tasks"] = task.sub_tasks
+
+    return payload
 
 
 @router.post("/tasks", response_model=TaskCreateResponse)
@@ -105,18 +127,7 @@ def create_task(
     )
     db.commit()
     return {
-        "id": new_task.id,
-        "title": new_task.title,
-        "description": new_task.description,
-        "start_date": new_task.start_date,
-        "end_date": new_task.end_date,
-        "status": new_task.status,
-        "estimated_days": new_task.estimated_days,
-        "estimated_hours": new_task.estimated_hours,
-        "created_by": new_task.created_by,
-        "assigned_to": new_task.assigned_to,
-        "version": new_task.version,
-        "parent_task_id": new_task.parent_task_id,
+        **_serialize_task(new_task, include_sub_tasks=True),
         "sub_tasks": created_sub_tasks,
         "sub_tasks_created_count": len(created_sub_tasks),
     }
@@ -131,7 +142,7 @@ def get_my_tasks(
     search: str | None = Query(default=None),
     status: str | None = Query(default=None),
 ):
-    query = db.query(Task).filter(Task.assigned_to == current_user.id)
+    query = db.query(Task).options(selectinload(Task.sub_tasks)).filter(Task.assigned_to == current_user.id)
 
     if status:
         query = query.filter(Task.status == status)
@@ -150,8 +161,10 @@ def get_my_tasks(
         .all()
     )
 
+    serialized_items = [_serialize_task(task, include_sub_tasks=True) for task in items]
+
     return {
-        "items": items,
+        "items": serialized_items,
         "total": total,
         "page": page,
         "page_size": page_size,
@@ -230,6 +243,8 @@ def get_all_tasks_admin(
                 "id": task.id,
                 "title": task.title,
                 "description": task.description,
+                "start_date": task.start_date,
+                "end_date": task.end_date,
                 "status": task.status,
                 "estimated_days": task.estimated_days,
                 "estimated_hours": task.estimated_hours,
@@ -346,7 +361,7 @@ def update_task(
     db.commit()
     db.refresh(task)
 
-    return task
+    return _serialize_task(task)
 
 
 @router.post("/tasks/{task_id}/revise", response_model=TaskResponse)
@@ -403,7 +418,7 @@ def revise_task(
     )
     db.commit()
 
-    return new_version
+    return _serialize_task(new_version)
 
 
 @router.delete("/tasks/{task_id}")

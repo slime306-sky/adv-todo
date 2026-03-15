@@ -49,8 +49,8 @@ class TaskResponse(BaseModel):
     status: TaskStatus
     estimated_days: int
     estimated_hours: int
-    created_by: int
-    assigned_to: int
+    created_by: str
+    assigned_to: str
     version: int
     parent_task_id: int | None = None
 
@@ -63,10 +63,16 @@ class TaskCreateResponse(TaskResponse):
     sub_tasks_created_count: int = 0
 
 
+class TaskWithSubTasksResponse(TaskResponse):
+    sub_tasks: list[SubTaskResponse] = Field(default_factory=list)
+
+
 class TaskAdminResponse(BaseModel):
     id: int
     title: str
     description: str
+    start_date: datetime
+    end_date: datetime
     status: TaskStatus
     estimated_days: int
     estimated_hours: int
@@ -78,7 +84,7 @@ class TaskAdminResponse(BaseModel):
 
 
 class TaskListResponse(BaseModel):
-    items: list[TaskResponse]
+    items: list[TaskWithSubTasksResponse]
     total: int
     page: int
     page_size: int
