@@ -6,3 +6,5 @@ TRYING_ON_POSTMAN.md
 # Python cache
 __pycache__/
 *.pyc
+
+.venv/

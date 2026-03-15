@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # To-Do App API Contract
 
 Version: 1.1 (current implementation)
