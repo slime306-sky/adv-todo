@@ -1,5 +1,4 @@
 from fastapi import APIRouter, Depends
-from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
 from app.core.audit import log_audit_event
@@ -15,7 +14,7 @@ from app.core.security import (
 )
 from app.models.user import User
 from app.schemas.auth import Token
-from app.schemas.user import PasswordChangeRequest, UserCreate
+from app.schemas.user import PasswordChangeRequest, UserCreate, UserLogin
 
 router = APIRouter(tags=["auth"])
 
@@ -53,9 +52,9 @@ def register(user: UserCreate, db: Session = Depends(get_db), current_user: User
 
 @router.post("/login", response_model=Token)
 def login(
-    form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)
+    payload: UserLogin, db: Session = Depends(get_db)
 ):
-    user = db.query(User).filter(User.username == form_data.username).first()
+    user = db.query(User).filter(User.username == payload.username).first()
     if not user:
         raise api_error(
             status_code=401,
@@ -64,7 +63,7 @@ def login(
         )
 
     if is_supported_password_hash(user.password):
-        if not verify_password(form_data.password, user.password):
+        if not verify_password(payload.password, user.password):
             raise api_error(
                 status_code=401,
                 code="INVALID_CREDENTIALS",
@@ -72,14 +71,14 @@ def login(
             )
     else:
         # Legacy fallback: allow one successful plaintext login, then upgrade to hash.
-        if not user.password or form_data.password != user.password:
+        if not user.password or payload.password != user.password:
             raise api_error(
                 status_code=401,
                 code="INVALID_CREDENTIALS",
                 message="Invalid credentials",
             )
 
-        user.password = hash_password(form_data.password)
+        user.password = hash_password(payload.password)
         log_audit_event(
             db=db,
             action="PASSWORD_MIGRATION",

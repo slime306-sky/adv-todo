@@ -21,8 +21,8 @@ This contract documents the API behavior as implemented in the current FastAPI c
 
 ### Login Input Format
 
-- `POST /login` accepts `application/x-www-form-urlencoded`
-- Required form fields:
+- `POST /login` accepts `application/json`
+- Required JSON fields:
   - `username`
   - `password`
 
@@ -202,10 +202,13 @@ Error responses:
 - Method: `POST`
 - Path: `/login`
 - Auth required: No
-- Request body (`application/x-www-form-urlencoded`):
+- Request body (`application/json`):
 
-```txt
-username=alice&password=secret123
+```json
+{
+  "username": "alice",
+  "password": "secret123"
+}
 ```
 
 Success response (`200 OK`):
