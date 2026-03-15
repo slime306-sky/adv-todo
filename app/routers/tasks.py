@@ -8,10 +8,12 @@ from app.core.security import get_current_user, get_db, require_role
 from app.models.sub_task import SubTask
 from app.models.task import Task, TaskStatus
 from app.models.user import User
+from app.routers.sub_tasks import recalculate_task_estimated_time
 from app.schemas.task import (
     TaskAdminListResponse,
     TaskAdminResponse,
     TaskCreate,
+    TaskCreateResponse,
     TaskListResponse,
     TaskProgressResponse,
     TaskResponse,
@@ -21,7 +23,7 @@ from app.schemas.task import (
 router = APIRouter(tags=["tasks"])
 
 
-@router.post("/tasks", response_model=TaskResponse)
+@router.post("/tasks", response_model=TaskCreateResponse)
 def create_task(
     task: TaskCreate,
     db: Session = Depends(get_db),
@@ -54,8 +56,40 @@ def create_task(
     )
 
     db.add(new_task)
-    db.commit()
+    created_sub_tasks: list[SubTask] = []
+    try:
+        db.flush()
+
+        if task.sub_tasks:
+            for sub_task in task.sub_tasks:
+                new_sub_task = SubTask(
+                    title=sub_task.title,
+                    description=sub_task.description,
+                    status=sub_task.status.value,
+                    estimated_days=sub_task.estimated_days,
+                    estimated_hours=sub_task.estimated_hours,
+                    task_id=new_task.id,
+                    created_by=current_user.id,
+                )
+                db.add(new_sub_task)
+                created_sub_tasks.append(new_sub_task)
+
+            recalculate_task_estimated_time(db, new_task.id)
+
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        raise api_error(
+            status_code=500,
+            code="TRANSACTION_FAILED",
+            message="Failed to create task with subtasks",
+            dev_message=str(exc),
+        )
+
     db.refresh(new_task)
+    for sub_task in created_sub_tasks:
+        db.refresh(sub_task)
+
     log_audit_event(
         db=db,
         action="CREATE",
@@ -63,10 +97,29 @@ def create_task(
         entity_id=new_task.id,
         user_id=current_user.id,
         message="Task created",
-        details={"title": new_task.title, "assigned_to": new_task.assigned_to},
+        details={
+            "title": new_task.title,
+            "assigned_to": new_task.assigned_to,
+            "sub_tasks_count": len(created_sub_tasks),
+        },
     )
     db.commit()
-    return new_task
+    return {
+        "id": new_task.id,
+        "title": new_task.title,
+        "description": new_task.description,
+        "start_date": new_task.start_date,
+        "end_date": new_task.end_date,
+        "status": new_task.status,
+        "estimated_days": new_task.estimated_days,
+        "estimated_hours": new_task.estimated_hours,
+        "created_by": new_task.created_by,
+        "assigned_to": new_task.assigned_to,
+        "version": new_task.version,
+        "parent_task_id": new_task.parent_task_id,
+        "sub_tasks": created_sub_tasks,
+        "sub_tasks_created_count": len(created_sub_tasks),
+    }
 
 
 @router.get("/my-tasks", response_model=TaskListResponse)

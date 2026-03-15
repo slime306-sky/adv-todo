@@ -1,8 +1,19 @@
 ﻿from datetime import datetime
+from typing import Annotated
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, root_validator
 
+from app.models.sub_task import SubTaskStatus
 from app.models.task import TaskStatus
+from app.schemas.sub_task import SubTaskResponse
+
+
+class TaskSubTaskCreate(BaseModel):
+    title: str
+    description: str
+    status: SubTaskStatus = SubTaskStatus.not_complete
+    estimated_days: Annotated[int, Field(ge=0)] = 0
+    estimated_hours: Annotated[int, Field(ge=0, lt=24)] = 0
 
 
 class TaskCreate(BaseModel):
@@ -12,6 +23,21 @@ class TaskCreate(BaseModel):
     end_date: datetime
     assigned_to: int | None = None
     assigned_to_username: str | None = None
+    sub_tasks: list[TaskSubTaskCreate] | None = None
+    sub_task_count: Annotated[int, Field(ge=0)] | None = None
+
+    @root_validator(skip_on_failure=True)
+    def validate_sub_task_count(cls, values):
+        sub_tasks = values.get("sub_tasks")
+        sub_task_count = values.get("sub_task_count")
+
+        if sub_task_count is not None and sub_tasks is None:
+            raise ValueError("sub_task_count requires sub_tasks payload")
+
+        if sub_task_count is not None and len(sub_tasks) != sub_task_count:
+            raise ValueError("sub_task_count must match number of sub_tasks")
+
+        return values
 
 
 class TaskResponse(BaseModel):
@@ -30,6 +56,11 @@ class TaskResponse(BaseModel):
 
     class Config:
         orm_mode = True
+
+
+class TaskCreateResponse(TaskResponse):
+    sub_tasks: list[SubTaskResponse] = Field(default_factory=list)
+    sub_tasks_created_count: int = 0
 
 
 class TaskAdminResponse(BaseModel):
