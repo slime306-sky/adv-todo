@@ -29,6 +29,20 @@ def _serialize_user_reference(user: User | None, fallback_id: int | None):
     return {"id": fallback_id, "name": "Unknown"}
 
 
+def _serialize_sub_task(sub_task: SubTask):
+    return {
+        "id": sub_task.id,
+        "title": sub_task.title,
+        "description": sub_task.description,
+        "status": sub_task.status,
+        "estimated_days": sub_task.estimated_days,
+        "estimated_hours": sub_task.estimated_hours,
+        "created_at": sub_task.created_at,
+        "task_id": sub_task.task_id,
+        "created_by": _serialize_user_reference(sub_task.creator, sub_task.created_by),
+    }
+
+
 def _serialize_task(task: Task, include_sub_tasks: bool = False):
     payload = {
         "id": task.id,
@@ -46,7 +60,7 @@ def _serialize_task(task: Task, include_sub_tasks: bool = False):
     }
 
     if include_sub_tasks:
-        payload["sub_tasks"] = task.sub_tasks
+        payload["sub_tasks"] = [_serialize_sub_task(sub_task) for sub_task in task.sub_tasks]
 
     return payload
 
@@ -134,7 +148,7 @@ def create_task(
     db.commit()
     return {
         **_serialize_task(new_task, include_sub_tasks=True),
-        "sub_tasks": created_sub_tasks,
+        "sub_tasks": [_serialize_sub_task(sub_task) for sub_task in created_sub_tasks],
         "sub_tasks_created_count": len(created_sub_tasks),
     }
 

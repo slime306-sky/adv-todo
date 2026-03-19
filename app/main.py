@@ -4,6 +4,7 @@ import uuid
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.core.database import Base, SessionLocal, engine
@@ -17,6 +18,111 @@ from app.models.user import User
 from app.routers import activities, audit_logs, auth, dashboard, sub_tasks, tasks, users
 
 Base.metadata.create_all(bind=engine)
+
+
+def _ensure_sqlite_tasks_columns():
+    if not engine.url.drivername.startswith("sqlite"):
+        return
+
+    with engine.begin() as connection:
+        existing_columns = {
+            row[1] for row in connection.execute(text("PRAGMA table_info(tasks)"))
+        }
+
+        if "version" not in existing_columns:
+            connection.execute(
+                text("ALTER TABLE tasks ADD COLUMN version INTEGER NOT NULL DEFAULT 1")
+            )
+
+        if "parent_task_id" not in existing_columns:
+            connection.execute(
+                text("ALTER TABLE tasks ADD COLUMN parent_task_id INTEGER")
+            )
+
+
+def _repair_legacy_sqlite_sub_tasks_table():
+    if not engine.url.drivername.startswith("sqlite"):
+        return
+
+    with engine.begin() as connection:
+        table_exists = connection.execute(
+            text(
+                "SELECT name FROM sqlite_master "
+                "WHERE type = 'table' AND name = 'sub_tasks'"
+            )
+        ).first()
+
+        if not table_exists:
+            return
+
+        table_info = list(connection.execute(text("PRAGMA table_info(sub_tasks)")))
+        columns = {row[1]: row for row in table_info}
+        activity_column = columns.get("activity_id")
+
+        # Legacy schema had sub_tasks.activity_id as NOT NULL, which current model no longer uses.
+        if not activity_column or activity_column[3] == 0:
+            return
+
+        connection.execute(text("PRAGMA foreign_keys = OFF"))
+        try:
+            connection.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS sub_tasks_new (
+                        id INTEGER NOT NULL,
+                        title VARCHAR NOT NULL,
+                        description VARCHAR,
+                        status VARCHAR,
+                        estimated_days INTEGER,
+                        estimated_hours INTEGER,
+                        created_at DATETIME,
+                        task_id INTEGER NOT NULL,
+                        created_by INTEGER NOT NULL,
+                        PRIMARY KEY (id),
+                        FOREIGN KEY(task_id) REFERENCES tasks (id),
+                        FOREIGN KEY(created_by) REFERENCES users (id)
+                    )
+                    """
+                )
+            )
+
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO sub_tasks_new (
+                        id,
+                        title,
+                        description,
+                        status,
+                        estimated_days,
+                        estimated_hours,
+                        created_at,
+                        task_id,
+                        created_by
+                    )
+                    SELECT
+                        id,
+                        title,
+                        description,
+                        COALESCE(status, 'not complete'),
+                        COALESCE(estimated_days, 0),
+                        COALESCE(estimated_hours, 0),
+                        created_at,
+                        task_id,
+                        created_by
+                    FROM sub_tasks
+                    """
+                )
+            )
+
+            connection.execute(text("DROP TABLE sub_tasks"))
+            connection.execute(text("ALTER TABLE sub_tasks_new RENAME TO sub_tasks"))
+        finally:
+            connection.execute(text("PRAGMA foreign_keys = ON"))
+
+
+_ensure_sqlite_tasks_columns()
+_repair_legacy_sqlite_sub_tasks_table()
 
 app = FastAPI()
 

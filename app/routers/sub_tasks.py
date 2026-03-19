@@ -39,6 +39,10 @@ def _serialize_sub_task(sub_task: SubTask):
 
 
 def recalculate_task_estimated_time(db: Session, task_id: int):
+    # Session uses autoflush=False, so flush pending inserts/updates/deletes
+    # to make aggregate totals reflect the latest sub-task changes.
+    db.flush()
+
     total_hours = (
         db.query(
             func.coalesce(

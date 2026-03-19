@@ -1,195 +1,139 @@
 # To-Do App API Contract
 
-Version: 1.1 (current implementation)
+Version: 2.0.0
+Generated from current implementation on 2026-03-19.
 
-This contract documents the API behavior as implemented in the current FastAPI codebase.
-
-## Base Information
+## 1. Service Overview
 
 - Framework: FastAPI
-- Base URL (local): `http://127.0.0.1:8000`
-- OpenAPI JSON: `GET /openapi.json`
-- Interactive docs: `GET /docs`
-- Default success code for most routes: `200 OK`
+- App entrypoint: app/main.py
+- Local base URL: http://127.0.0.1:8000
+- OpenAPI spec: GET /openapi.json
+- Swagger UI: GET /docs
 
-## Authentication and Authorization
+## 2. Authentication and Authorization
 
-### Auth Type
+### 2.1 Token Type
 
-- JWT Bearer token
-- OAuth2 password flow with token URL: `/login`
+- JWT Bearer token via OAuth2 password flow.
+- Token endpoint: POST /login
+- Token lifetime: 30 minutes
 
-### Login Input Format
+### 2.2 Authorization Header
 
-- `POST /login` accepts `application/json`
-- Required JSON fields:
-  - `username`
-  - `password`
+Send on protected endpoints:
 
-### Token Usage
-
-Send access token in header:
-
-```http
 Authorization: Bearer <access_token>
-```
 
-### Role Model
+### 2.3 Roles
 
-- `admin`: can access admin-only routes.
-- `user`: can access user-scoped routes.
+- admin
+- user
 
-Admin-only routes use role guard and return:
+Route guards:
 
-- `403` with structured body (see Error Contract below)
+- admin-only routes use require_role("admin") and return 403 INSUFFICIENT_PERMISSIONS when not authorized.
+- user-scoped routes validate ownership and return 403 FORBIDDEN_TASK_ACCESS when not authorized.
 
-## Error Contract
+## 3. Error Contract
 
-### Unified Error Shape
-
-All API errors now follow:
+All non-2xx API errors are returned in this shape:
 
 ```json
 {
   "message": "Human-readable message",
   "code": "MACHINE_READABLE_CODE",
-  "dev_message": "Developer-focused detail",
-  "request_id": "uuid-or-x-request-id",
-  "path": "/requested/path"
-}
-```
-
-Fields:
-- `message`: user/frontend friendly summary.
-- `code`: stable machine-readable error code (`NOT_FOUND`, `VALIDATION_ERROR`, etc.).
-- `dev_message`: debugging context for developers.
-- `request_id`: correlation id (uses incoming `x-request-id` header if present, otherwise generated).
-- `path`: request path.
-
-### Custom Error Codes (current)
-
-- Auth/Security:
-  - `USERNAME_ALREADY_EXISTS`
-  - `INVALID_CREDENTIALS`
-  - `INVALID_TOKEN`
-  - `INSUFFICIENT_PERMISSIONS`
-- Users:
-  - `USER_NOT_FOUND`
-  - `SELF_ROLE_CHANGE_NOT_ALLOWED`
-  - `INVALID_ROLE`
-  - `SELF_DELETE_NOT_ALLOWED`
-- Tasks:
-  - `TASK_NOT_FOUND`
-  - `ASSIGNED_USER_NOT_FOUND`
-  - `FORBIDDEN_TASK_ACCESS`
-- Activities:
-  - `ACTIVITY_NOT_FOUND`
-  - `INVALID_ACTIVITY_STATUS`
-- Sub-tasks:
-  - `SUBTASK_NOT_FOUND`
-  - `SUBTASK_ACTIVITY_TASK_MISMATCH`
-
-### Validation Errors
-
-Validation failures return `422 Unprocessable Entity` with the same unified shape plus `details`:
-
-```json
-{
-  "message": "Validation failed",
-  "code": "VALIDATION_ERROR",
-  "dev_message": "One or more request fields are invalid",
-  "request_id": "uuid-or-x-request-id",
-  "path": "/requested/path",
-  "details": [
-    {
-      "loc": ["body", "field_name"],
-      "msg": "field required",
-      "type": "value_error.missing"
-    }
-  ]
-}
-```
-
-## Endpoints
-
----
-
-## 0) Audit Logs
-
-### 0.1 Get Audit Logs
-
-- Method: `GET`
-- Path: `/audit-logs`
-- Auth required: Yes (authenticated user)
-- Query params:
-  - `page` (default `1`)
-  - `page_size` (default `20`, max `100`)
-  - `action` (optional)
-  - `entity_type` (optional)
-  - `entity_id` (optional)
-  - `user_id` (optional, admin only)
-  - `search` (optional)
-  - `start_date` (optional, ISO datetime)
-  - `end_date` (optional, ISO datetime)
-
-Success response (`200 OK`):
-
-```json
-{
-  "items": [
-    {
-      "id": 101,
-      "action": "CREATE",
-      "entity_type": "task",
-      "entity_id": 10,
-      "message": "Task created",
-      "details": {
-        "title": "Build API contract",
-        "assigned_to": 2
-      },
-      "user_id": 1,
-      "user": {
-        "id": 1,
-        "name": "admin"
-      },
-      "created_at": "2026-03-06T13:20:00"
-    }
-  ],
-  "total": 1,
-  "page": 1,
-  "page_size": 20,
-  "total_pages": 1
-}
-```
-
-Behavior:
-- Admin can view all audit logs.
-- Non-admin users only see logs where `user_id` matches their account.
-
----
-
-## 1) Auth
-
-### 1.1 Register User
-
-- Method: `POST`
-- Path: `/register`
-- Auth required: No
-- Request body (`application/json`):
-
-```json
-{
-  "username": "alice",
-  "email": "alice@example.com",
-  "password": "secret123",
-  "role": "user"
+  "dev_message": "Developer detail",
+  "request_id": "uuid-or-incoming-x-request-id",
+  "path": "/request/path",
+  "details": []
 }
 ```
 
 Notes:
-- `role` defaults to `"user"` if omitted.
 
-Success response (`200 OK`):
+- details is present for validation errors and some custom errors.
+- request_id is echoed in response header x-request-id.
+
+### 3.1 Default Error Codes by Status
+
+- 400 -> BAD_REQUEST
+- 401 -> UNAUTHORIZED
+- 403 -> FORBIDDEN
+- 404 -> NOT_FOUND
+- 409 -> CONFLICT
+- 422 -> VALIDATION_ERROR
+- 500 -> INTERNAL_SERVER_ERROR
+
+### 3.2 Common Domain Error Codes
+
+- USERNAME_ALREADY_EXISTS
+- INVALID_CREDENTIALS
+- INVALID_TOKEN
+- INSUFFICIENT_PERMISSIONS
+- INVALID_PASSWORD
+- USER_NOT_FOUND
+- SELF_ROLE_CHANGE_NOT_ALLOWED
+- INVALID_ROLE
+- PASSWORD_UPDATE_NOT_ALLOWED
+- SELF_DELETE_NOT_ALLOWED
+- ASSIGNED_USER_NOT_FOUND
+- TASK_NOT_FOUND
+- FORBIDDEN_TASK_ACCESS
+- TASK_ALREADY_COMPLETE
+- TASK_NOT_COMPLETE
+- SUBTASK_NOT_FOUND
+- SUBTASK_ALREADY_COMPLETE
+- ACTIVITY_NOT_FOUND
+- ACTIVITY_ALREADY_COMPLETE
+- INVALID_ACTIVITY_STATUS
+- TRANSACTION_FAILED
+
+## 4. Shared DTO Shapes
+
+### 4.1 UserReference
+
+```json
+{
+  "id": 1,
+  "name": "alice"
+}
+```
+
+### 4.2 Pagination Envelope
+
+Used by list endpoints:
+
+```json
+{
+  "items": [],
+  "total": 0,
+  "page": 1,
+  "page_size": 10,
+  "total_pages": 0
+}
+```
+
+## 5. Endpoint Contract
+
+## 5.1 Auth
+
+### POST /register
+
+Auth: admin required
+
+Request body:
+
+```json
+{
+  "username": "newuser",
+  "email": "newuser@example.com",
+  "password": "StrongPassword123",
+  "role": "user"
+}
+```
+
+Success 200:
 
 ```json
 {
@@ -197,25 +141,26 @@ Success response (`200 OK`):
 }
 ```
 
-Error responses:
-- `400` `{ "detail": "Username already exists" }`
-- `422` validation error
+Errors:
 
-### 1.2 Login
+- 400 USERNAME_ALREADY_EXISTS
+- 403 INSUFFICIENT_PERMISSIONS
+- 422 VALIDATION_ERROR
 
-- Method: `POST`
-- Path: `/login`
-- Auth required: No
-- Request body (`application/json`):
+### POST /login
+
+Auth: none
+
+Request body:
 
 ```json
 {
   "username": "alice",
-  "password": "secret123"
+  "password": "StrongPassword123"
 }
 ```
 
-Success response (`200 OK`):
+Success 200:
 
 ```json
 {
@@ -230,30 +175,48 @@ Success response (`200 OK`):
 }
 ```
 
-Error responses:
-- `401` `{ "detail": "Invalid credentials" }`
-- `422` validation error
+Errors:
 
----
+- 401 INVALID_CREDENTIALS
+- 422 VALIDATION_ERROR
 
-## 2) Users (Admin)
+### POST /change-password
 
-### 2.1 Get All Users
+Auth: authenticated user
 
-- Method: `GET`
-- Path: `/users`
-- Auth required: Yes (admin)
+Request body:
 
-Success response (`200 OK`):
+```json
+{
+  "current_password": "OldPassword123",
+  "new_password": "NewPassword123"
+}
+```
+
+Success 200:
+
+```json
+{
+  "message": "Password changed successfully"
+}
+```
+
+Errors:
+
+- 400 INVALID_PASSWORD
+- 401 INVALID_CREDENTIALS
+- 422 VALIDATION_ERROR
+
+## 5.2 Users
+
+### GET /users
+
+Auth: admin required
+
+Success 200:
 
 ```json
 [
-  {
-    "id": 2,
-    "name": "alice",
-    "email": "alice@example.com",
-    "role": "user"
-  },
   {
     "id": 1,
     "name": "admin",
@@ -263,55 +226,83 @@ Success response (`200 OK`):
 ]
 ```
 
-Error responses:
-- `401` invalid/missing token
-- `403` `{ "detail": "Not enough permissions" }`
+Errors:
 
-### 2.2 Update User
+- 403 INSUFFICIENT_PERMISSIONS
 
-- Method: `PUT`
-- Path: `/users/{user_id}`
-- Auth required: Yes (admin)
-- Path params:
-  - `user_id` (integer)
-- Request body (`application/json`) all fields optional:
+### PUT /users/{user_id}
+
+Auth: admin required
+
+Request body (all fields optional):
 
 ```json
 {
-  "username": "alice_new",
-  "email": "alice_new@example.com",
+  "username": "alice2",
+  "email": "alice2@example.com",
   "role": "user"
 }
 ```
 
-Success response (`200 OK`):
+Success 200:
 
 ```json
 {
   "id": 2,
-  "name": "alice_new",
-  "email": "alice_new@example.com",
+  "name": "alice2",
+  "email": "alice2@example.com",
   "role": "user"
 }
 ```
 
-Error responses:
-- `400` `{ "detail": "Admin cannot change own role" }`
-- `400` `{ "detail": "Invalid role" }`
-- `404` `{ "detail": "User not found" }`
-- `401` invalid/missing token
-- `403` `{ "detail": "Not enough permissions" }`
-- `422` validation error
+Errors:
 
-### 2.3 Delete User
+- 400 SELF_ROLE_CHANGE_NOT_ALLOWED
+- 400 INVALID_ROLE
+- 400 PASSWORD_UPDATE_NOT_ALLOWED
+- 404 USER_NOT_FOUND
+- 403 INSUFFICIENT_PERMISSIONS
 
-- Method: `DELETE`
-- Path: `/users/{user_id}`
-- Auth required: Yes (admin)
-- Path params:
-  - `user_id` (integer)
+### POST /users/remediate-passwords
 
-Success response (`200 OK`):
+Auth: admin required
+
+Query params:
+
+- dry_run (boolean, default true)
+- limit (integer, 1..500, default 100)
+
+Success 200:
+
+```json
+{
+  "processed_users": 1,
+  "affected_users": [
+    {
+      "user_id": 5,
+      "username": "legacy_user",
+      "email": "legacy@example.com",
+      "temporary_password": "TempPasswordGenerated"
+    }
+  ]
+}
+```
+
+Notes:
+
+- When dry_run=true, response reports impacted users without changing DB.
+- When dry_run=false, invalid hashes are replaced with temporary hashed passwords.
+
+Errors:
+
+- 403 INSUFFICIENT_PERMISSIONS
+- 422 VALIDATION_ERROR
+
+### DELETE /users/{user_id}
+
+Auth: admin required
+
+Success 200:
 
 ```json
 {
@@ -319,36 +310,24 @@ Success response (`200 OK`):
 }
 ```
 
-Error responses:
-- `400` `{ "detail": "Admin cannot delete themselves" }`
-- `404` `{ "detail": "User not found" }`
-- `401` invalid/missing token
-- `403` `{ "detail": "Not enough permissions" }`
+Errors:
 
----
+- 400 SELF_DELETE_NOT_ALLOWED
+- 404 USER_NOT_FOUND
+- 403 INSUFFICIENT_PERMISSIONS
 
-## 3) Tasks
+## 5.3 Tasks
 
-### 3.1 Create Task (Admin)
+### POST /tasks
 
-- Method: `POST`
-- Path: `/tasks`
-- Auth required: Yes (admin)
-- Request body (`application/json`):
+Auth: authenticated user
 
-Task-only payload (existing behavior):
+Role behavior:
 
-```json
-{
-  "title": "Build API docs",
-  "description": "Write contract",
-  "start_date": "2026-03-03T09:00:00",
-  "end_date": "2026-03-05T18:00:00",
-  "assigned_to": 2
-}
-```
+- admin: must provide either assigned_to or assigned_to_username.
+- user: task is always assigned to current user, even if assignment fields are omitted.
 
-Task with nested subtasks:
+Request body:
 
 ```json
 {
@@ -356,7 +335,7 @@ Task with nested subtasks:
   "description": "Write contract",
   "start_date": "2026-03-03T09:00:00",
   "end_date": "2026-03-05T18:00:00",
-  "assigned_to": 2,
+  "assigned_to": 6,
   "sub_task_count": 2,
   "sub_tasks": [
     {
@@ -377,13 +356,14 @@ Task with nested subtasks:
 }
 ```
 
-Validation rules:
-- `sub_tasks` is optional.
-- `sub_task_count` is optional.
-- If `sub_task_count` is provided, `sub_tasks` must also be provided.
-- If both are provided, `sub_task_count` must match `len(sub_tasks)`.
+Nested validation:
 
-Success response (`200 OK`):
+- sub_tasks is optional.
+- sub_task_count is optional.
+- If sub_task_count is provided, sub_tasks must also be provided.
+- If both are provided, sub_task_count must equal len(sub_tasks).
+
+Success 200:
 
 ```json
 {
@@ -400,8 +380,8 @@ Success response (`200 OK`):
     "name": "admin"
   },
   "assigned_to": {
-    "id": 2,
-    "name": "alice"
+    "id": 6,
+    "name": "divya"
   },
   "version": 1,
   "parent_task_id": null,
@@ -419,40 +399,30 @@ Success response (`200 OK`):
         "id": 1,
         "name": "admin"
       }
-    },
-    {
-      "id": 102,
-      "title": "Implement router",
-      "description": "Create task and subtasks atomically",
-      "status": "not complete",
-      "estimated_days": 0,
-      "estimated_hours": 5,
-      "created_at": "2026-03-03T09:06:00",
-      "task_id": 10,
-      "created_by": {
-        "id": 1,
-        "name": "admin"
-      }
     }
   ],
   "sub_tasks_created_count": 2
 }
 ```
 
-Error responses:
-- `404` `{ "detail": "Assigned user not found" }`
-- `422` validation error when `sub_task_count` does not match `sub_tasks` length
-- `422` validation error when `sub_task_count` is provided without `sub_tasks`
-- `401` invalid/missing token
-- `403` `{ "detail": "Not enough permissions" }`
+Errors:
 
-### 3.2 Get My Tasks
+- 404 ASSIGNED_USER_NOT_FOUND
+- 500 TRANSACTION_FAILED
+- 422 VALIDATION_ERROR
 
-- Method: `GET`
-- Path: `/my-tasks`
-- Auth required: Yes (authenticated user)
+### GET /my-tasks
 
-Success response (`200 OK`):
+Auth: authenticated user
+
+Query params:
+
+- page (int >= 1, default 1)
+- page_size (int 1..100, default 10)
+- search (string, optional)
+- status (string, optional)
+
+Success 200:
 
 ```json
 {
@@ -471,8 +441,8 @@ Success response (`200 OK`):
         "name": "admin"
       },
       "assigned_to": {
-        "id": 2,
-        "name": "alice"
+        "id": 6,
+        "name": "divya"
       },
       "version": 1,
       "parent_task_id": null,
@@ -486,18 +456,16 @@ Success response (`200 OK`):
 }
 ```
 
-Error responses:
-- `401` invalid/missing token
+### PUT /tasks/{task_id}/complete
 
-### 3.3 Mark Task Complete
+Auth: authenticated user
 
-- Method: `PUT`
-- Path: `/tasks/{task_id}/complete`
-- Auth required: Yes (task assignee)
-- Path params:
-  - `task_id` (integer)
+Rules:
 
-Success response (`200 OK`):
+- Only assigned user can complete task.
+- Admin does not bypass this check in current implementation.
+
+Success 200:
 
 ```json
 {
@@ -505,18 +473,24 @@ Success response (`200 OK`):
 }
 ```
 
-Error responses:
-- `404` `{ "detail": "Task not found" }`
-- `403` `{ "detail": "Not authorized" }`
-- `401` invalid/missing token
+Errors:
 
-### 3.4 Get All Tasks (Admin)
+- 404 TASK_NOT_FOUND
+- 403 FORBIDDEN_TASK_ACCESS
 
-- Method: `GET`
-- Path: `/tasks`
-- Auth required: Yes (admin)
+### GET /tasks
 
-Success response (`200 OK`):
+Auth: admin required
+
+Query params:
+
+- page (int >= 1, default 1)
+- page_size (int 1..100, default 10)
+- search (string, optional)
+- status (string, optional)
+- assigned_to (int, optional)
+
+Success 200:
 
 ```json
 {
@@ -535,8 +509,8 @@ Success response (`200 OK`):
         "name": "admin"
       },
       "assigned_to": {
-        "id": 2,
-        "name": "alice"
+        "id": 6,
+        "name": "divya"
       }
     }
   ],
@@ -547,71 +521,99 @@ Success response (`200 OK`):
 }
 ```
 
-Error responses:
-- `401` invalid/missing token
-- `403` `{ "detail": "Not enough permissions" }`
+Errors:
 
-### 3.5 Update Task (Admin)
+- 403 INSUFFICIENT_PERMISSIONS
 
-- Method: `PUT`
-- Path: `/tasks/{task_id}`
-- Auth required: Yes (admin)
-- Path params:
-  - `task_id` (integer)
-- Request body (`application/json`) all fields optional:
+### GET /tasks/{task_id}/progress
 
-```json
-{
-  "title": "Build API contract",
-  "description": "Finalize docs",
-  "start_date": "2026-03-03T10:00:00",
-  "end_date": "2026-03-06T18:00:00",
-  "status": "complete",
-  "assigned_to": 2
-}
-```
+Auth: authenticated user
 
-Success response (`200 OK`):
+Rules:
+
+- Assigned user and admin can access.
+
+Success 200:
 
 ```json
 {
-  "id": 10,
-  "title": "Build API contract",
-  "description": "Finalize docs",
-  "start_date": "2026-03-03T10:00:00",
-  "end_date": "2026-03-06T18:00:00",
-  "status": "complete",
-  "estimated_days": 0,
-  "estimated_hours": 8,
-  "created_by": {
-    "id": 1,
-    "name": "admin"
-  },
-  "assigned_to": {
-    "id": 2,
-    "name": "alice"
-  },
-  "version": 1,
-  "parent_task_id": null
+  "task_id": 10,
+  "total_subtasks": 2,
+  "completed_subtasks": 1,
+  "progress_percentage": 50.0,
+  "is_completed": false
 }
 ```
 
-Error responses:
-- `404` `{ "detail": "Task not found" }`
-- `404` `{ "detail": "Assigned user not found" }`
-- `401` invalid/missing token
-- `403` `{ "detail": "Not enough permissions" }`
-- `422` validation error
+Errors:
 
-### 3.6 Delete Task (Admin)
+- 404 TASK_NOT_FOUND
+- 403 FORBIDDEN_TASK_ACCESS
 
-- Method: `DELETE`
-- Path: `/tasks/{task_id}`
-- Auth required: Yes (admin)
-- Path params:
-  - `task_id` (integer)
+### PUT /tasks/{task_id}
 
-Success response (`200 OK`):
+Auth: admin required
+
+Request body (all fields optional):
+
+```json
+{
+  "title": "Updated title",
+  "description": "Updated description",
+  "start_date": "2026-03-03T09:00:00",
+  "end_date": "2026-03-07T18:00:00",
+  "status": "in progress",
+  "assigned_to": 7,
+  "assigned_to_username": "newassignee"
+}
+```
+
+Notes:
+
+- If assigned_to_username is provided in payload, it overrides assigned_to.
+- If status change is requested on an already complete task, request fails.
+
+Success 200:
+
+TaskResponse shape (same as task object without sub_tasks).
+
+Errors:
+
+- 404 TASK_NOT_FOUND
+- 404 ASSIGNED_USER_NOT_FOUND
+- 400 TASK_ALREADY_COMPLETE
+- 403 INSUFFICIENT_PERMISSIONS
+
+### POST /tasks/{task_id}/revise
+
+Auth: authenticated user
+
+Rules:
+
+- Original task must be complete.
+- Allowed for assigned user or admin.
+- Creates a new task version with:
+  - version = previous version + 1
+  - parent_task_id = previous task id
+  - status = not complete
+  - estimated_days = 0
+  - estimated_hours = 0
+
+Success 200:
+
+TaskResponse shape.
+
+Errors:
+
+- 404 TASK_NOT_FOUND
+- 400 TASK_NOT_COMPLETE
+- 403 FORBIDDEN_TASK_ACCESS
+
+### DELETE /tasks/{task_id}
+
+Auth: admin required
+
+Success 200:
 
 ```json
 {
@@ -619,329 +621,128 @@ Success response (`200 OK`):
 }
 ```
 
-Error responses:
-- `404` `{ "detail": "Task not found" }`
-- `401` invalid/missing token
-- `403` `{ "detail": "Not enough permissions" }`
+Errors:
 
----
+- 404 TASK_NOT_FOUND
+- 403 INSUFFICIENT_PERMISSIONS
 
-## 4) Activities
+## 5.4 Subtasks
 
-### 4.1 Create Activity (Admin)
+### POST /subtasks
 
-- Method: `POST`
-- Path: `/activities`
-- Auth required: Yes (admin)
-- Request body (`application/json`):
+Auth: authenticated user
+
+Request body:
 
 ```json
 {
-  "title": "Design endpoints",
-  "description": "Map all routes",
-  "date": "2026-03-03",
-  "sub_task_id": 3
-}
-```
-
-Success response (`200 OK`):
-
-```json
-{
-  "id": 5,
-  "title": "Design endpoints",
-  "description": "Map all routes",
-  "date": "2026-03-03",
+  "title": "Design schema",
+  "description": "Prepare fields",
   "status": "not complete",
-  "sub_task_id": 3,
-  "created_by": {
-    "id": 1,
-    "name": "admin"
-  }
-}
-```
-
-Error responses:
-- `404` `{ "detail": "Sub task not found" }`
-- `401` invalid/missing token
-- `403` `{ "detail": "Not enough permissions" }`
-- `422` validation error
-
-### 4.2 Update Activity (Admin)
-
-- Method: `PUT`
-- Path: `/activities/{activity_id}`
-- Auth required: Yes (admin)
-- Path params:
-  - `activity_id` (integer)
-- Request body (`application/json`) all fields optional:
-
-```json
-{
-  "title": "Design endpoint contracts",
-  "description": "Add examples",
-  "date": "2026-03-04",
-  "status": "complete",
-  "sub_task_id": 3
-}
-```
-
-Success response (`200 OK`):
-
-```json
-{
-  "id": 5,
-  "title": "Design endpoint contracts",
-  "description": "Add examples",
-  "date": "2026-03-04",
-  "status": "complete",
-  "sub_task_id": 3,
-  "created_by": {
-    "id": 1,
-    "name": "admin"
-  }
-}
-```
-
-Error responses:
-- `400` `{ "detail": "Invalid status" }` when status is not `"complete"` or `"not complete"`
-- `404` `{ "detail": "Activity not found" }`
-- `404` `{ "detail": "Sub task not found" }`
-- `401` invalid/missing token
-- `403` `{ "detail": "Not enough permissions" }`
-- `422` validation error
-
-### 4.3 Delete Activity (Admin)
-
-- Method: `DELETE`
-- Path: `/activities/{activity_id}`
-- Auth required: Yes (admin)
-- Path params:
-  - `activity_id` (integer)
-
-Success response (`200 OK`):
-
-```json
-{
-  "message": "Activity deleted successfully"
-}
-```
-
-Error responses:
-- `404` `{ "detail": "Activity not found" }`
-- `401` invalid/missing token
-- `403` `{ "detail": "Not enough permissions" }`
-
-### 4.4 Get Activities for Task
-
-- Method: `GET`
-- Path: `/tasks/{task_id}/activities`
-- Auth required: Yes (task assignee or admin)
-- Path params:
-  - `task_id` (integer)
-
-Success response (`200 OK`):
-
-```json
-{
-  "items": [
-    {
-      "id": 5,
-      "title": "Design endpoints",
-      "description": "Map all routes",
-      "date": "2026-03-03",
-      "status": "not complete",
-      "sub_task_id": 3,
-      "created_by": {
-        "id": 1,
-        "name": "admin"
-      }
-    }
-  ],
-  "total": 1,
-  "page": 1,
-  "page_size": 10,
-  "total_pages": 1
-}
-```
-
-Error responses:
-- `404` `{ "detail": "Task not found" }`
-- `403` `{ "detail": "Not authorized" }`
-- `401` invalid/missing token
-
-Implementation note:
-- Activities are linked through sub-tasks (`task -> sub-task -> activity`).
-
----
-
-## 5) Sub Tasks
-
-### 5.1 Create Sub Task
-
-- Method: `POST`
-- Path: `/subtasks`
-- Auth required: Yes (admin or task assignee)
-- Request body (`application/json`):
-
-```json
-{
-  "title": "Draft serializer",
-  "description": "Add pydantic schema",
-  "status": "not complete",
-  "estimated_days": 1,
+  "estimated_days": 0,
   "estimated_hours": 4,
   "task_id": 10
 }
 ```
 
-Success response (`200 OK`):
+Rules:
+
+- task_id must exist.
+- Allowed for admin or user assigned to parent task.
+
+Success 200:
+
+SubTaskResponse shape.
+
+Errors:
+
+- 404 TASK_NOT_FOUND
+- 403 FORBIDDEN_TASK_ACCESS
+- 422 VALIDATION_ERROR
+
+### GET /subtasks
+
+Auth: authenticated user
+
+Query params:
+
+- page (int >= 1, default 1)
+- page_size (int 1..100, default 10)
+- search (string, optional)
+- status (string, optional)
+- task_id (int, optional)
+
+Visibility:
+
+- admin sees all subtasks.
+- user sees subtasks only for tasks assigned to them.
+
+Success 200:
+
+SubTask list pagination envelope.
+
+### GET /subtasks/{sub_task_id}
+
+Auth: authenticated user
+
+Rules:
+
+- subtask must exist.
+- caller must have access to parent task (admin or assigned user).
+
+Success 200:
+
+SubTaskResponse shape.
+
+Errors:
+
+- 404 SUBTASK_NOT_FOUND
+- 404 TASK_NOT_FOUND
+- 403 FORBIDDEN_TASK_ACCESS
+
+### PUT /subtasks/{sub_task_id}
+
+Auth: authenticated user
+
+Request body (all fields optional):
 
 ```json
 {
-  "id": 3,
-  "title": "Draft serializer",
-  "description": "Add pydantic schema",
-  "status": "not complete",
-  "estimated_days": 1,
-  "estimated_hours": 4,
-  "created_at": "2026-03-06T10:15:00",
-  "task_id": 10,
-  "created_by": {
-    "id": 2,
-    "name": "alice"
-  }
-}
-```
-
-Error responses:
-- `404` `{ "detail": "Task not found" }`
-- `403` `{ "detail": "Not authorized" }`
-- `401` invalid/missing token
-- `422` validation error (includes invalid status)
-
-### 5.2 Get Sub Tasks
-
-- Method: `GET`
-- Path: `/subtasks`
-- Auth required: Yes (authenticated user)
-
-Success response (`200 OK`):
-
-```json
-{
-  "items": [
-    {
-      "id": 3,
-      "title": "Draft serializer",
-      "description": "Add pydantic schema",
-      "status": "not complete",
-      "estimated_days": 1,
-      "estimated_hours": 4,
-      "created_at": "2026-03-06T10:15:00",
-      "task_id": 10,
-      "created_by": {
-        "id": 2,
-        "name": "alice"
-      }
-    }
-  ],
-  "total": 1,
-  "page": 1,
-  "page_size": 10,
-  "total_pages": 1
-}
-```
-
-Behavior:
-- Admin receives all sub tasks.
-- User receives only sub tasks where parent task is assigned to them.
-
-Error responses:
-- `401` invalid/missing token
-
-### 5.3 Get Sub Task By Id
-
-- Method: `GET`
-- Path: `/subtasks/{sub_task_id}`
-- Auth required: Yes (admin or task assignee)
-
-Success response (`200 OK`):
-
-```json
-{
-  "id": 3,
-  "title": "Draft serializer",
-  "description": "Add pydantic schema",
-  "status": "not complete",
-  "estimated_days": 1,
-  "estimated_hours": 4,
-  "created_at": "2026-03-06T10:15:00",
-  "task_id": 10,
-  "created_by": {
-    "id": 2,
-    "name": "alice"
-  }
-}
-```
-
-Error responses:
-- `404` `{ "detail": "Sub task not found" }`
-- `404` `{ "detail": "Task not found" }`
-- `403` `{ "detail": "Not authorized" }`
-- `401` invalid/missing token
-
-### 5.4 Update Sub Task
-
-- Method: `PUT`
-- Path: `/subtasks/{sub_task_id}`
-- Auth required: Yes (admin or task assignee)
-- Request body (`application/json`) all fields optional:
-
-```json
-{
-  "title": "Draft schema + validation",
-  "description": "Finalize status enum",
+  "title": "Refine schema",
+  "description": "Add constraints",
   "status": "complete",
   "estimated_days": 0,
-  "estimated_hours": 6,
-  "task_id": 10
+  "estimated_hours": 5,
+  "task_id": 11
 }
 ```
 
-Success response (`200 OK`):
+Rules:
 
-```json
-{
-  "id": 3,
-  "title": "Draft schema + validation",
-  "description": "Finalize status enum",
-  "status": "complete",
-  "estimated_days": 0,
-  "estimated_hours": 6,
-  "created_at": "2026-03-06T10:15:00",
-  "task_id": 10,
-  "created_by": {
-    "id": 2,
-    "name": "alice"
-  }
-}
-```
+- Completed subtasks cannot be reopened.
+- New task_id, if provided, must exist.
+- On update, parent task estimate totals are recalculated.
 
-Error responses:
-- `404` `{ "detail": "Sub task not found" }`
-- `404` `{ "detail": "Task not found" }`
-- `403` `{ "detail": "Not authorized" }`
-- `401` invalid/missing token
-- `422` validation error (includes invalid status)
+Success 200:
 
-### 5.5 Delete Sub Task
+SubTaskResponse shape.
 
-- Method: `DELETE`
-- Path: `/subtasks/{sub_task_id}`
-- Auth required: Yes (admin or task assignee)
+Errors:
 
-Success response (`200 OK`):
+- 404 SUBTASK_NOT_FOUND
+- 404 TASK_NOT_FOUND
+- 400 SUBTASK_ALREADY_COMPLETE
+- 403 FORBIDDEN_TASK_ACCESS
+
+### DELETE /subtasks/{sub_task_id}
+
+Auth: authenticated user
+
+Rules:
+
+- caller must be admin or assigned user of parent task.
+
+Success 200:
 
 ```json
 {
@@ -949,175 +750,45 @@ Success response (`200 OK`):
 }
 ```
 
-Error responses:
-- `404` `{ "detail": "Sub task not found" }`
-- `404` `{ "detail": "Task not found" }`
-- `403` `{ "detail": "Not authorized" }`
-- `401` invalid/missing token
+Errors:
 
----
+- 404 SUBTASK_NOT_FOUND
+- 404 TASK_NOT_FOUND
+- 403 FORBIDDEN_TASK_ACCESS
 
-## Schema Reference
+## 5.5 Activities
 
-## Auth Schema
+### POST /activities
 
-### Token
+Auth: admin required
 
-```json
-{
-  "access_token": "string",
-  "token_type": "string",
-  "username": "string",
-  "role": "string",
-  "user": {
-    "id": 1,
-    "name": "string"
-  }
-}
-```
-
-## User Schemas
-
-### UserCreate
+Request body:
 
 ```json
 {
-  "username": "string",
-  "email": "string",
-  "password": "string",
-  "role": "user"
-}
-```
-
-### UserResponse
-
-```json
-{
-  "id": 1,
-  "name": "string",
-  "email": "string",
-  "role": "string"
-}
-```
-
-### UserUpdate (all optional)
-
-```json
-{
-  "username": "string",
-  "email": "string",
-  "role": "string"
-}
-```
-
-## Task Schemas
-
-### TaskCreate
-
-```json
-{
-  "title": "string",
-  "description": "string",
-  "start_date": "2026-03-03T09:00:00",
-  "end_date": "2026-03-05T18:00:00",
-  "assigned_to": 2
-}
-```
-
-### TaskUpdate (all optional)
-
-```json
-{
-  "title": "string",
-  "description": "string",
-  "start_date": "2026-03-03T09:00:00",
-  "end_date": "2026-03-05T18:00:00",
-  "status": "complete",
-  "assigned_to": 2
-}
-```
-
-### TaskResponse
-
-```json
-{
-  "id": 10,
-  "title": "string",
-  "description": "string",
-  "start_date": "2026-03-03T09:00:00",
-  "end_date": "2026-03-05T18:00:00",
-  "status": "not complete",
-  "estimated_days": 2,
-  "estimated_hours": 3,
-  "created_by": {
-    "id": 1,
-    "name": "admin"
-  },
-  "assigned_to": {
-    "id": 2,
-    "name": "alice"
-  },
-  "version": 1,
-  "parent_task_id": null
-}
-```
-
-### TaskAdminResponse
-
-```json
-{
-  "id": 10,
-  "title": "string",
-  "description": "string",
-  "status": "not complete",
-  "estimated_days": 2,
-  "estimated_hours": 3,
-  "created_by": {
-    "id": 1,
-    "name": "admin"
-  },
-  "assigned_to": {
-    "id": 2,
-    "name": "alice"
-  }
-}
-```
-
-## Activity Schemas
-
-### ActivityCreate
-
-```json
-{
-  "title": "string",
-  "description": "string",
-  "date": "2026-03-03",
-  "sub_task_id": 3
-}
-```
-
-### ActivityUpdate (all optional)
-
-```json
-{
-  "title": "string",
-  "description": "string",
+  "title": "Code review",
+  "description": "Review implementation",
   "date": "2026-03-04",
-  "status": "complete",
-  "sub_task_id": 3
+  "sub_task_id": 101
 }
 ```
 
-### ActivityResponse
+Rules:
+
+- sub_task_id must exist.
+
+Success 200:
+
+ActivityResponse shape:
 
 ```json
 {
-  "id": 5,
-  "title": "string",
-  "description": "string",
+  "id": 201,
+  "title": "Code review",
+  "description": "Review implementation",
   "date": "2026-03-04",
   "status": "not complete",
-  "sub_task_id": 3,
+  "sub_task_id": 101,
   "created_by": {
     "id": 1,
     "name": "admin"
@@ -1125,61 +796,210 @@ Error responses:
 }
 ```
 
-## Sub Task Schemas
+Errors:
 
-### SubTaskCreate
+- 404 SUBTASK_NOT_FOUND
+- 403 INSUFFICIENT_PERMISSIONS
 
-```json
-{
-  "title": "string",
-  "description": "string",
-  "status": "not complete",
-  "estimated_days": 1,
-  "estimated_hours": 4,
-  "task_id": 10
-}
-```
+### PUT /activities/{activity_id}
 
-### SubTaskUpdate (all optional)
+Auth: admin required
+
+Request body (all fields optional):
 
 ```json
 {
-  "title": "string",
-  "description": "string",
+  "title": "Updated activity",
+  "description": "Updated",
+  "date": "2026-03-05",
   "status": "complete",
-  "estimated_days": 0,
-  "estimated_hours": 6,
-  "task_id": 10
+  "sub_task_id": 102
 }
 ```
 
-### SubTaskResponse
+Rules:
+
+- Completed activity cannot be reopened.
+- status (if provided) must be one of: complete, not complete.
+- sub_task_id (if provided) must exist.
+
+Success 200:
+
+ActivityResponse shape.
+
+Errors:
+
+- 404 ACTIVITY_NOT_FOUND
+- 404 SUBTASK_NOT_FOUND
+- 400 ACTIVITY_ALREADY_COMPLETE
+- 400 INVALID_ACTIVITY_STATUS
+- 403 INSUFFICIENT_PERMISSIONS
+
+### DELETE /activities/{activity_id}
+
+Auth: admin required
+
+Success 200:
 
 ```json
 {
-  "id": 3,
-  "title": "string",
-  "description": "string",
-  "status": "not complete",
-  "estimated_days": 1,
-  "estimated_hours": 4,
-  "created_at": "2026-03-06T10:15:00",
-  "task_id": 10,
-  "created_by": {
-    "id": 2,
-    "name": "alice"
-  }
+  "message": "Activity deleted successfully"
 }
 ```
 
----
+Errors:
 
-## Implementation-Accurate Constraints
+- 404 ACTIVITY_NOT_FOUND
+- 403 INSUFFICIENT_PERMISSIONS
 
-- Task status values used in code include: `"complete"`, `"not complete"`.
-- Task estimated time is recalculated from all linked sub-tasks as `estimated_days` + `estimated_hours`.
-- Activity update explicitly validates status to only: `"complete"` or `"not complete"`.
-- Sub-task status is constrained by schema enum to: `"complete"` or `"not complete"`.
-- Sub-task `estimated_hours` is constrained to `0-23`, and `estimated_days` must be `>= 0`.
-- Login uses JSON body with `username` and `password`.
-- Create/delete endpoints currently return `200`, not `201/204`.
+### GET /tasks/{task_id}/activities
+
+Auth: authenticated user
+
+Query params:
+
+- page (int >= 1, default 1)
+- page_size (int 1..100, default 10)
+- search (string, optional)
+- status (string, optional)
+- sub_task_id (int, optional)
+
+Rules:
+
+- task_id must exist.
+- allowed for admin or assigned user of task.
+
+Success 200:
+
+Activity list pagination envelope.
+
+Errors:
+
+- 404 TASK_NOT_FOUND
+- 403 FORBIDDEN_TASK_ACCESS
+
+## 5.6 Audit Logs
+
+### GET /audit-logs
+
+Auth: authenticated user
+
+Query params:
+
+- page (int >= 1, default 1)
+- page_size (int 1..100, default 20)
+- action (string, optional)
+- entity_type (string, optional)
+- entity_id (int, optional)
+- user_id (int, optional; honored only for admin)
+- search (string, optional)
+- start_date (datetime, optional)
+- end_date (datetime, optional)
+
+Visibility:
+
+- admin sees all logs (and can filter by user_id).
+- user sees only own logs.
+
+Success 200:
+
+```json
+{
+  "items": [
+    {
+      "id": 500,
+      "action": "CREATE",
+      "entity_type": "task",
+      "entity_id": 10,
+      "message": "Task created",
+      "details": {
+        "title": "Build API docs"
+      },
+      "user_id": 1,
+      "user": {
+        "id": 1,
+        "name": "admin"
+      },
+      "created_at": "2026-03-03T09:05:00"
+    }
+  ],
+  "total": 1,
+  "page": 1,
+  "page_size": 20,
+  "total_pages": 1
+}
+```
+
+## 5.7 Dashboard
+
+### GET /dashboard
+
+Auth: authenticated user
+
+Visibility:
+
+- admin: aggregates over all tasks.
+- user: aggregates over tasks assigned to current user.
+
+Success 200:
+
+```json
+{
+  "total_tasks": 10,
+  "completed_tasks": 4,
+  "in_progress_tasks": 3,
+  "overdue_tasks": 2,
+  "recent_tasks": [
+    {
+      "id": 10,
+      "title": "Build API docs",
+      "status": "not complete",
+      "end_date": "2026-03-05T18:00:00",
+      "assigned_to": {
+        "id": 6,
+        "name": "divya"
+      }
+    }
+  ]
+}
+```
+
+## 6. Enum and Field Constraints
+
+### 6.1 Task Status
+
+Allowed values:
+
+- complete
+- not complete
+- in progress
+- blocked
+
+### 6.2 Subtask Status
+
+Allowed values:
+
+- complete
+- not complete
+
+### 6.3 Numeric Constraints
+
+- task sub_task_count >= 0
+- subtask estimated_days >= 0
+- subtask estimated_hours >= 0 and < 24
+
+## 7. Audit Logging Behavior
+
+The following actions create audit log records:
+
+- Auth: LOGIN, PASSWORD_CHANGE, PASSWORD_MIGRATION
+- Users: CREATE, UPDATE, DELETE, PASSWORD_REMEDIATION
+- Tasks: CREATE, UPDATE, COMPLETE, REVISE, DELETE
+- Subtasks: CREATE, UPDATE, DELETE
+- Activities: CREATE, UPDATE, DELETE
+
+## 8. Implementation Notes
+
+- Some successful operation endpoints return simple message-only bodies.
+- All API errors pass through the unified error handlers in app/core/errors.py.
+- Request correlation id is attached for every request and returned in response header x-request-id.
