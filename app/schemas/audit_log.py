@@ -2,6 +2,8 @@
 
 from pydantic import BaseModel
 
+from app.schemas.user import UserReference
+
 
 class AuditLogResponse(BaseModel):
     id: int
@@ -11,6 +13,7 @@ class AuditLogResponse(BaseModel):
     message: str
     details: dict | None = None
     user_id: int | None = None
+    user: UserReference | None = None
     created_at: datetime
 
     class Config:

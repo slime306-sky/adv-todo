@@ -12,6 +12,22 @@ from app.schemas.dashboard import DashboardResponse
 router = APIRouter(tags=["dashboard"])
 
 
+def _serialize_user_reference(user: User | None, fallback_id: int | None):
+    if user:
+        return {"id": user.id, "name": user.username}
+    return {"id": fallback_id, "name": "Unknown"}
+
+
+def _serialize_recent_task(task: Task):
+    return {
+        "id": task.id,
+        "title": task.title,
+        "status": task.status,
+        "end_date": task.end_date,
+        "assigned_to": _serialize_user_reference(task.assignee, task.assigned_to),
+    }
+
+
 @router.get("/dashboard", response_model=DashboardResponse)
 def get_dashboard(
     db: Session = Depends(get_db),
@@ -38,5 +54,5 @@ def get_dashboard(
         "completed_tasks": completed_tasks,
         "in_progress_tasks": in_progress_tasks,
         "overdue_tasks": overdue_tasks,
-        "recent_tasks": recent_tasks,
+        "recent_tasks": [_serialize_recent_task(task) for task in recent_tasks],
     }

@@ -13,6 +13,15 @@ from app.schemas.user import PasswordRemediationResponse, PasswordRemediationUse
 router = APIRouter(tags=["users"])
 
 
+def _serialize_user(user: User):
+    return {
+        "id": user.id,
+        "name": user.username,
+        "email": user.email,
+        "role": user.role,
+    }
+
+
 def _generate_temporary_password(length: int = 16) -> str:
     alphabet = ascii_letters + digits
     return "".join(choice(alphabet) for _ in range(length))
@@ -24,7 +33,7 @@ def get_all_users(
     current_user: User = Depends(require_role("admin")),
 ):
     users = db.query(User).all()
-    return users
+    return [_serialize_user(user) for user in users]
 
 
 @router.put("/users/{user_id}", response_model=UserResponse)
@@ -73,7 +82,7 @@ def update_user(
     db.commit()
     db.refresh(user)
 
-    return user
+    return _serialize_user(user)
 
 
 @router.post("/users/remediate-passwords", response_model=PasswordRemediationResponse)

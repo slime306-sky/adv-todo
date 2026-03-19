@@ -4,6 +4,7 @@ from typing import Annotated
 from pydantic import BaseModel, Field
 
 from app.models.sub_task import SubTaskStatus
+from app.schemas.user import UserReference
 
 
 class SubTaskCreate(BaseModel):
@@ -33,7 +34,7 @@ class SubTaskResponse(BaseModel):
     estimated_hours: int
     created_at: datetime
     task_id: int
-    created_by: int
+    created_by: UserReference
 
     class Config:
         orm_mode = True

@@ -106,6 +106,7 @@ def login(
         "token_type": "bearer",
         "username": user.username,
         "role": user.role,
+        "user": {"id": user.id, "name": user.username},
     }
 
 

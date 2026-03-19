@@ -22,10 +22,11 @@ from app.schemas.task import (
     TaskResponse,
     TaskUpdate,
 )
-from app.schemas.user import UserCreate, UserLogin, UserResponse, UserUpdate
+from app.schemas.user import UserCreate, UserLogin, UserReference, UserResponse, UserUpdate
 
 __all__ = [
     "UserCreate",
+    "UserReference",
     "UserResponse",
     "UserUpdate",
     "UserLogin",

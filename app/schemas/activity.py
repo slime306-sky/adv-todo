@@ -2,6 +2,8 @@
 
 from pydantic import BaseModel
 
+from app.schemas.user import UserReference
+
 
 class ActivityCreate(BaseModel):
     title: str
@@ -25,7 +27,7 @@ class ActivityResponse(BaseModel):
     date: DateType
     status: str
     sub_task_id: int
-    created_by: int
+    created_by: UserReference
 
     class Config:
         orm_mode = True

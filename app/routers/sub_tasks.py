@@ -18,6 +18,26 @@ from app.schemas.sub_task import (
 router = APIRouter(tags=["sub-tasks"])
 
 
+def _serialize_user_reference(user: User | None, fallback_id: int | None):
+    if user:
+        return {"id": user.id, "name": user.username}
+    return {"id": fallback_id, "name": "Unknown"}
+
+
+def _serialize_sub_task(sub_task: SubTask):
+    return {
+        "id": sub_task.id,
+        "title": sub_task.title,
+        "description": sub_task.description,
+        "status": sub_task.status,
+        "estimated_days": sub_task.estimated_days,
+        "estimated_hours": sub_task.estimated_hours,
+        "created_at": sub_task.created_at,
+        "task_id": sub_task.task_id,
+        "created_by": _serialize_user_reference(sub_task.creator, sub_task.created_by),
+    }
+
+
 def recalculate_task_estimated_time(db: Session, task_id: int):
     total_hours = (
         db.query(
@@ -86,7 +106,7 @@ def create_sub_task(
         details={"task_id": new_sub_task.task_id, "title": new_sub_task.title},
     )
     db.commit()
-    return new_sub_task
+    return _serialize_sub_task(new_sub_task)
 
 
 @router.get("/subtasks", response_model=SubTaskListResponse)
@@ -132,7 +152,7 @@ def get_sub_tasks(
     )
 
     return {
-        "items": items,
+        "items": [_serialize_sub_task(item) for item in items],
         "total": total,
         "page": page,
         "page_size": page_size,
@@ -159,7 +179,7 @@ def get_sub_task_by_id(
         raise api_error(status_code=404, code="TASK_NOT_FOUND", message="Task not found")
 
     ensure_user_can_manage_task(task, current_user)
-    return sub_task
+    return _serialize_sub_task(sub_task)
 
 
 @router.put("/subtasks/{sub_task_id}", response_model=SubTaskResponse)
@@ -218,7 +238,7 @@ def update_sub_task(
     )
     db.commit()
     db.refresh(sub_task)
-    return sub_task
+    return _serialize_sub_task(sub_task)
 
 
 @router.delete("/subtasks/{sub_task_id}")

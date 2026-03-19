@@ -23,6 +23,12 @@ from app.schemas.task import (
 router = APIRouter(tags=["tasks"])
 
 
+def _serialize_user_reference(user: User | None, fallback_id: int | None):
+    if user:
+        return {"id": user.id, "name": user.username}
+    return {"id": fallback_id, "name": "Unknown"}
+
+
 def _serialize_task(task: Task, include_sub_tasks: bool = False):
     payload = {
         "id": task.id,
@@ -33,8 +39,8 @@ def _serialize_task(task: Task, include_sub_tasks: bool = False):
         "status": task.status,
         "estimated_days": task.estimated_days,
         "estimated_hours": task.estimated_hours,
-        "created_by": task.creator.username if task.creator else str(task.created_by),
-        "assigned_to": task.assignee.username if task.assignee else str(task.assigned_to),
+        "created_by": _serialize_user_reference(task.creator, task.created_by),
+        "assigned_to": _serialize_user_reference(task.assignee, task.assigned_to),
         "version": task.version,
         "parent_task_id": task.parent_task_id,
     }
@@ -248,8 +254,8 @@ def get_all_tasks_admin(
                 "status": task.status,
                 "estimated_days": task.estimated_days,
                 "estimated_hours": task.estimated_hours,
-                "creator_username": task.creator.username,
-                "assignee_username": task.assignee.username,
+                "created_by": _serialize_user_reference(task.creator, task.created_by),
+                "assigned_to": _serialize_user_reference(task.assignee, task.assigned_to),
             }
         )
 

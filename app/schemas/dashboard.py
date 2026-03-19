@@ -3,6 +3,7 @@ from datetime import datetime
 from pydantic import BaseModel
 
 from app.models.task import TaskStatus
+from app.schemas.user import UserReference
 
 
 class DashboardRecentTask(BaseModel):
@@ -10,7 +11,7 @@ class DashboardRecentTask(BaseModel):
     title: str
     status: TaskStatus
     end_date: datetime | None = None
-    assigned_to: int
+    assigned_to: UserReference
 
     class Config:
         orm_mode = True

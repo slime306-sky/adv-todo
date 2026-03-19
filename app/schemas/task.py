@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field, root_validator
 from app.models.sub_task import SubTaskStatus
 from app.models.task import TaskStatus
 from app.schemas.sub_task import SubTaskResponse
+from app.schemas.user import UserReference
 
 
 class TaskSubTaskCreate(BaseModel):
@@ -49,8 +50,8 @@ class TaskResponse(BaseModel):
     status: TaskStatus
     estimated_days: int
     estimated_hours: int
-    created_by: str
-    assigned_to: str
+    created_by: UserReference
+    assigned_to: UserReference
     version: int
     parent_task_id: int | None = None
 
@@ -76,8 +77,8 @@ class TaskAdminResponse(BaseModel):
     status: TaskStatus
     estimated_days: int
     estimated_hours: int
-    creator_username: str
-    assignee_username: str
+    created_by: UserReference
+    assigned_to: UserReference
 
     class Config:
         orm_mode = True

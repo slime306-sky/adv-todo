@@ -12,6 +12,28 @@ from app.schemas.audit_log import AuditLogListResponse
 router = APIRouter(tags=["audit-logs"])
 
 
+def _serialize_user_reference(user: User | None, fallback_id: int | None):
+    if user:
+        return {"id": user.id, "name": user.username}
+    if fallback_id is None:
+        return None
+    return {"id": fallback_id, "name": "Unknown"}
+
+
+def _serialize_audit_log(log: AuditLog):
+    return {
+        "id": log.id,
+        "action": log.action,
+        "entity_type": log.entity_type,
+        "entity_id": log.entity_id,
+        "message": log.message,
+        "details": log.details,
+        "user_id": log.user_id,
+        "user": _serialize_user_reference(log.user, log.user_id),
+        "created_at": log.created_at,
+    }
+
+
 @router.get("/audit-logs", response_model=AuditLogListResponse)
 def get_audit_logs(
     db: Session = Depends(get_db),
@@ -67,7 +89,7 @@ def get_audit_logs(
     )
 
     return {
-        "items": items,
+        "items": [_serialize_audit_log(item) for item in items],
         "total": total,
         "page": page,
         "page_size": page_size,

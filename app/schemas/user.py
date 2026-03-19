@@ -8,8 +8,14 @@ class UserCreate(BaseModel):
     role: str = "user"
 
 
+class UserReference(BaseModel):
+    id: int
+    name: str
+
+
 class UserResponse(BaseModel):
-    username: str
+    id: int
+    name: str
     email: str
     role: str
 

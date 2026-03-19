@@ -19,6 +19,24 @@ from app.schemas.activity import (
 router = APIRouter(tags=["activities"])
 
 
+def _serialize_user_reference(user: User | None, fallback_id: int | None):
+    if user:
+        return {"id": user.id, "name": user.username}
+    return {"id": fallback_id, "name": "Unknown"}
+
+
+def _serialize_activity(activity: Activity):
+    return {
+        "id": activity.id,
+        "title": activity.title,
+        "description": activity.description,
+        "date": activity.date,
+        "status": activity.status,
+        "sub_task_id": activity.sub_task_id,
+        "created_by": _serialize_user_reference(activity.creator, activity.created_by),
+    }
+
+
 @router.post("/activities", response_model=ActivityResponse)
 def create_activity(
     activity: ActivityCreate,
@@ -54,7 +72,7 @@ def create_activity(
         details={"sub_task_id": new_activity.sub_task_id, "title": new_activity.title},
     )
     db.commit()
-    return new_activity
+    return _serialize_activity(new_activity)
 
 
 @router.put("/activities/{activity_id}", response_model=ActivityResponse)
@@ -114,7 +132,7 @@ def update_activity(
     )
     db.commit()
     db.refresh(activity)
-    return activity
+    return _serialize_activity(activity)
 
 
 @router.delete("/activities/{activity_id}")
@@ -198,7 +216,7 @@ def get_task_activities(
     )
 
     return {
-        "items": items,
+        "items": [_serialize_activity(item) for item in items],
         "total": total,
         "page": page,
         "page_size": page_size,

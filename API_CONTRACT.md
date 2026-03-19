@@ -148,6 +148,10 @@ Success response (`200 OK`):
         "assigned_to": 2
       },
       "user_id": 1,
+      "user": {
+        "id": 1,
+        "name": "admin"
+      },
       "created_at": "2026-03-06T13:20:00"
     }
   ],
@@ -218,7 +222,11 @@ Success response (`200 OK`):
   "access_token": "<jwt>",
   "token_type": "bearer",
   "username": "alice",
-  "role": "user"
+  "role": "user",
+  "user": {
+    "id": 2,
+    "name": "alice"
+  }
 }
 ```
 
@@ -241,12 +249,14 @@ Success response (`200 OK`):
 ```json
 [
   {
-    "username": "alice",
+    "id": 2,
+    "name": "alice",
     "email": "alice@example.com",
     "role": "user"
   },
   {
-    "username": "admin",
+    "id": 1,
+    "name": "admin",
     "email": "admin@example.com",
     "role": "admin"
   }
@@ -278,7 +288,8 @@ Success response (`200 OK`):
 
 ```json
 {
-  "username": "alice_new",
+  "id": 2,
+  "name": "alice_new",
   "email": "alice_new@example.com",
   "role": "user"
 }
@@ -384,8 +395,14 @@ Success response (`200 OK`):
   "status": "not complete",
   "estimated_days": 0,
   "estimated_hours": 8,
-  "created_by": 1,
-  "assigned_to": 2,
+  "created_by": {
+    "id": 1,
+    "name": "admin"
+  },
+  "assigned_to": {
+    "id": 2,
+    "name": "alice"
+  },
   "version": 1,
   "parent_task_id": null,
   "sub_tasks": [
@@ -398,7 +415,10 @@ Success response (`200 OK`):
       "estimated_hours": 3,
       "created_at": "2026-03-03T09:05:00",
       "task_id": 10,
-      "created_by": 1
+      "created_by": {
+        "id": 1,
+        "name": "admin"
+      }
     },
     {
       "id": 102,
@@ -409,7 +429,10 @@ Success response (`200 OK`):
       "estimated_hours": 5,
       "created_at": "2026-03-03T09:06:00",
       "task_id": 10,
-      "created_by": 1
+      "created_by": {
+        "id": 1,
+        "name": "admin"
+      }
     }
   ],
   "sub_tasks_created_count": 2
@@ -432,18 +455,35 @@ Error responses:
 Success response (`200 OK`):
 
 ```json
-[
-  {
-    "id": 10,
-    "title": "Build API docs",
-    "description": "Write contract",
-    "start_date": "2026-03-03T09:00:00",
-    "end_date": "2026-03-05T18:00:00",
-    "status": "not complete",
-    "created_by": 1,
-    "assigned_to": 2
-  }
-]
+{
+  "items": [
+    {
+      "id": 10,
+      "title": "Build API docs",
+      "description": "Write contract",
+      "start_date": "2026-03-03T09:00:00",
+      "end_date": "2026-03-05T18:00:00",
+      "status": "not complete",
+      "estimated_days": 0,
+      "estimated_hours": 8,
+      "created_by": {
+        "id": 1,
+        "name": "admin"
+      },
+      "assigned_to": {
+        "id": 2,
+        "name": "alice"
+      },
+      "version": 1,
+      "parent_task_id": null,
+      "sub_tasks": []
+    }
+  ],
+  "total": 1,
+  "page": 1,
+  "page_size": 10,
+  "total_pages": 1
+}
 ```
 
 Error responses:
@@ -479,16 +519,32 @@ Error responses:
 Success response (`200 OK`):
 
 ```json
-[
-  {
-    "id": 10,
-    "title": "Build API docs",
-    "description": "Write contract",
-    "status": "not complete",
-    "creator_username": "admin",
-    "assignee_username": "alice"
-  }
-]
+{
+  "items": [
+    {
+      "id": 10,
+      "title": "Build API docs",
+      "description": "Write contract",
+      "start_date": "2026-03-03T09:00:00",
+      "end_date": "2026-03-05T18:00:00",
+      "status": "not complete",
+      "estimated_days": 0,
+      "estimated_hours": 8,
+      "created_by": {
+        "id": 1,
+        "name": "admin"
+      },
+      "assigned_to": {
+        "id": 2,
+        "name": "alice"
+      }
+    }
+  ],
+  "total": 1,
+  "page": 1,
+  "page_size": 10,
+  "total_pages": 1
+}
 ```
 
 Error responses:
@@ -525,8 +581,18 @@ Success response (`200 OK`):
   "start_date": "2026-03-03T10:00:00",
   "end_date": "2026-03-06T18:00:00",
   "status": "complete",
-  "created_by": 1,
-  "assigned_to": 2
+  "estimated_days": 0,
+  "estimated_hours": 8,
+  "created_by": {
+    "id": 1,
+    "name": "admin"
+  },
+  "assigned_to": {
+    "id": 2,
+    "name": "alice"
+  },
+  "version": 1,
+  "parent_task_id": null
 }
 ```
 
@@ -588,7 +654,10 @@ Success response (`200 OK`):
   "date": "2026-03-03",
   "status": "not complete",
   "sub_task_id": 3,
-  "created_by": 1
+  "created_by": {
+    "id": 1,
+    "name": "admin"
+  }
 }
 ```
 
@@ -627,7 +696,10 @@ Success response (`200 OK`):
   "date": "2026-03-04",
   "status": "complete",
   "sub_task_id": 3,
-  "created_by": 1
+  "created_by": {
+    "id": 1,
+    "name": "admin"
+  }
 }
 ```
 
@@ -671,17 +743,26 @@ Error responses:
 Success response (`200 OK`):
 
 ```json
-[
-  {
-    "id": 5,
-    "title": "Design endpoints",
-    "description": "Map all routes",
-    "date": "2026-03-03",
-    "status": "not complete",
-    "sub_task_id": 3,
-    "created_by": 1
-  }
-]
+{
+  "items": [
+    {
+      "id": 5,
+      "title": "Design endpoints",
+      "description": "Map all routes",
+      "date": "2026-03-03",
+      "status": "not complete",
+      "sub_task_id": 3,
+      "created_by": {
+        "id": 1,
+        "name": "admin"
+      }
+    }
+  ],
+  "total": 1,
+  "page": 1,
+  "page_size": 10,
+  "total_pages": 1
+}
 ```
 
 Error responses:
@@ -726,7 +807,10 @@ Success response (`200 OK`):
   "estimated_hours": 4,
   "created_at": "2026-03-06T10:15:00",
   "task_id": 10,
-  "created_by": 2
+  "created_by": {
+    "id": 2,
+    "name": "alice"
+  }
 }
 ```
 
@@ -745,19 +829,28 @@ Error responses:
 Success response (`200 OK`):
 
 ```json
-[
-  {
-    "id": 3,
-    "title": "Draft serializer",
-    "description": "Add pydantic schema",
-    "status": "not complete",
-    "estimated_days": 1,
-    "estimated_hours": 4,
-    "created_at": "2026-03-06T10:15:00",
-    "task_id": 10,
-    "created_by": 2
-  }
-]
+{
+  "items": [
+    {
+      "id": 3,
+      "title": "Draft serializer",
+      "description": "Add pydantic schema",
+      "status": "not complete",
+      "estimated_days": 1,
+      "estimated_hours": 4,
+      "created_at": "2026-03-06T10:15:00",
+      "task_id": 10,
+      "created_by": {
+        "id": 2,
+        "name": "alice"
+      }
+    }
+  ],
+  "total": 1,
+  "page": 1,
+  "page_size": 10,
+  "total_pages": 1
+}
 ```
 
 Behavior:
@@ -785,7 +878,10 @@ Success response (`200 OK`):
   "estimated_hours": 4,
   "created_at": "2026-03-06T10:15:00",
   "task_id": 10,
-  "created_by": 2
+  "created_by": {
+    "id": 2,
+    "name": "alice"
+  }
 }
 ```
 
@@ -825,7 +921,10 @@ Success response (`200 OK`):
   "estimated_hours": 6,
   "created_at": "2026-03-06T10:15:00",
   "task_id": 10,
-  "created_by": 2
+  "created_by": {
+    "id": 2,
+    "name": "alice"
+  }
 }
 ```
 
@@ -869,7 +968,11 @@ Error responses:
   "access_token": "string",
   "token_type": "string",
   "username": "string",
-  "role": "string"
+  "role": "string",
+  "user": {
+    "id": 1,
+    "name": "string"
+  }
 }
 ```
 
@@ -890,7 +993,8 @@ Error responses:
 
 ```json
 {
-  "username": "string",
+  "id": 1,
+  "name": "string",
   "email": "string",
   "role": "string"
 }
@@ -945,8 +1049,16 @@ Error responses:
   "status": "not complete",
   "estimated_days": 2,
   "estimated_hours": 3,
-  "created_by": 1,
-  "assigned_to": 2
+  "created_by": {
+    "id": 1,
+    "name": "admin"
+  },
+  "assigned_to": {
+    "id": 2,
+    "name": "alice"
+  },
+  "version": 1,
+  "parent_task_id": null
 }
 ```
 
@@ -960,8 +1072,14 @@ Error responses:
   "status": "not complete",
   "estimated_days": 2,
   "estimated_hours": 3,
-  "creator_username": "admin",
-  "assignee_username": "alice"
+  "created_by": {
+    "id": 1,
+    "name": "admin"
+  },
+  "assigned_to": {
+    "id": 2,
+    "name": "alice"
+  }
 }
 ```
 
@@ -1000,7 +1118,10 @@ Error responses:
   "date": "2026-03-04",
   "status": "not complete",
   "sub_task_id": 3,
-  "created_by": 1
+  "created_by": {
+    "id": 1,
+    "name": "admin"
+  }
 }
 ```
 
@@ -1044,7 +1165,10 @@ Error responses:
   "estimated_hours": 4,
   "created_at": "2026-03-06T10:15:00",
   "task_id": 10,
-  "created_by": 2
+  "created_by": {
+    "id": 2,
+    "name": "alice"
+  }
 }
 ```
 
@@ -1057,5 +1181,5 @@ Error responses:
 - Activity update explicitly validates status to only: `"complete"` or `"not complete"`.
 - Sub-task status is constrained by schema enum to: `"complete"` or `"not complete"`.
 - Sub-task `estimated_hours` is constrained to `0-23`, and `estimated_days` must be `>= 0`.
-- Login uses form data, not JSON.
+- Login uses JSON body with `username` and `password`.
 - Create/delete endpoints currently return `200`, not `201/204`.
