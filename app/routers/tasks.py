@@ -17,6 +17,7 @@ from app.schemas.task import (
     TaskListResponse,
     TaskProgressResponse,
     TaskResponse,
+    TaskWithSubTasksResponse,
     TaskUpdate,
 )
 
@@ -280,6 +281,32 @@ def get_all_tasks_admin(
         "page_size": page_size,
         "total_pages": (total + page_size - 1) // page_size,
     }
+
+
+@router.get("/tasks/{task_id}", response_model=TaskWithSubTasksResponse)
+def get_task_by_id(
+    task_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    task = (
+        db.query(Task)
+        .options(selectinload(Task.sub_tasks))
+        .filter(Task.id == task_id)
+        .first()
+    )
+
+    if not task:
+        raise api_error(status_code=404, code="TASK_NOT_FOUND", message="Task not found")
+
+    if task.assigned_to != current_user.id and current_user.role != "admin":
+        raise api_error(
+            status_code=403,
+            code="FORBIDDEN_TASK_ACCESS",
+            message="Not authorized",
+        )
+
+    return _serialize_task(task, include_sub_tasks=True)
 
 
 @router.get("/tasks/{task_id}/progress", response_model=TaskProgressResponse)

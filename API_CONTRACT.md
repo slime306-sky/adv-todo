@@ -525,6 +525,60 @@ Errors:
 
 - 403 INSUFFICIENT_PERMISSIONS
 
+### GET /tasks/{task_id}
+
+Auth: authenticated user
+
+Rules:
+
+- Assigned user and admin can access.
+
+Success 200:
+
+```json
+{
+  "id": 10,
+  "title": "Build API docs",
+  "description": "Write contract",
+  "start_date": "2026-03-03T09:00:00",
+  "end_date": "2026-03-05T18:00:00",
+  "status": "not complete",
+  "estimated_days": 0,
+  "estimated_hours": 8,
+  "created_by": {
+    "id": 1,
+    "name": "admin"
+  },
+  "assigned_to": {
+    "id": 6,
+    "name": "divya"
+  },
+  "version": 1,
+  "parent_task_id": null,
+  "sub_tasks": [
+    {
+      "id": 101,
+      "title": "Design request schema",
+      "description": "Add nested subtask create fields",
+      "status": "not complete",
+      "estimated_days": 0,
+      "estimated_hours": 3,
+      "created_at": "2026-03-03T09:05:00",
+      "task_id": 10,
+      "created_by": {
+        "id": 1,
+        "name": "admin"
+      }
+    }
+  ]
+}
+```
+
+Errors:
+
+- 404 TASK_NOT_FOUND
+- 403 FORBIDDEN_TASK_ACCESS
+
 ### GET /tasks/{task_id}/progress
 
 Auth: authenticated user
