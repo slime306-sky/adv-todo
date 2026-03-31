@@ -121,8 +121,73 @@ def _repair_legacy_sqlite_sub_tasks_table():
             connection.execute(text("PRAGMA foreign_keys = ON"))
 
 
+def _ensure_audit_logs_cascade_delete():
+    """Ensure audit_logs foreign key has ondelete CASCADE to allow user deletion."""
+    if not engine.url.drivername.startswith("sqlite"):
+        return
+
+    with engine.begin() as connection:
+        table_exists = connection.execute(
+            text(
+                "SELECT name FROM sqlite_master "
+                "WHERE type = 'table' AND name = 'audit_logs'"
+            )
+        ).first()
+
+        if not table_exists:
+            return
+
+        # Check current foreign key
+        fk_info = connection.execute(
+            text("PRAGMA foreign_key_list(audit_logs)")
+        ).fetchall()
+
+        # For this table, check if the user_id constraint has no ON DELETE action
+        for fk in fk_info:
+            if fk[3] == "user_id" and fk[5] is None:  # fk[5] is the on_delete action
+                # Need to recreate the table with proper CASCADE constraint
+                connection.execute(text("PRAGMA foreign_keys = OFF"))
+                try:
+                    connection.execute(
+                        text(
+                            """
+                            CREATE TABLE IF NOT EXISTS audit_logs_new (
+                                id INTEGER NOT NULL,
+                                action VARCHAR NOT NULL,
+                                entity_type VARCHAR NOT NULL,
+                                entity_id INTEGER,
+                                message VARCHAR NOT NULL,
+                                details JSON,
+                                created_at DATETIME NOT NULL,
+                                user_id INTEGER,
+                                PRIMARY KEY (id),
+                                FOREIGN KEY(user_id) REFERENCES users (id) ON DELETE CASCADE
+                            )
+                            """
+                        )
+                    )
+
+                    connection.execute(
+                        text(
+                            """
+                            INSERT INTO audit_logs_new
+                            SELECT * FROM audit_logs
+                            """
+                        )
+                    )
+
+                    connection.execute(text("DROP TABLE audit_logs"))
+                    connection.execute(
+                        text("ALTER TABLE audit_logs_new RENAME TO audit_logs")
+                    )
+                finally:
+                    connection.execute(text("PRAGMA foreign_keys = ON"))
+                break
+
+
 _ensure_sqlite_tasks_columns()
 _repair_legacy_sqlite_sub_tasks_table()
+_ensure_audit_logs_cascade_delete()
 
 app = FastAPI()
 

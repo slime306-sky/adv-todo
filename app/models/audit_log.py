@@ -17,5 +17,5 @@ class AuditLog(Base):
     details = Column(JSON)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
-    user_id = Column(Integer, ForeignKey("users.id"))
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
     user = relationship("User")
