@@ -145,7 +145,7 @@ def log_invalid_password_hash_count():
         db.close()
 
 # CORS â€” update ALLOWED_ORIGINS env var in Render to restrict to your frontend URL
-allowed_origins = os.environ.get("ALLOWED_ORIGINS", "*").split(",")
+allowed_origins = os.environ.get("ALLOWED_ORIGINS", "").split(",")
 
 app.add_middleware(
     CORSMiddleware,
@@ -154,6 +154,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+if allowed_origins == [""]:
+    allowed_origins = [
+        "http://localhost:3000",
+    ]
 
 
 @app.middleware("http")
