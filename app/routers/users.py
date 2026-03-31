@@ -2,11 +2,16 @@ from secrets import choice
 from string import ascii_letters, digits
 
 from fastapi import APIRouter, Depends, Query
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.audit import log_audit_event
 from app.core.errors import api_error
 from app.core.security import get_db, hash_password, is_supported_password_hash, require_role
+from app.models.activity import Activity
+from app.models.audit_log import AuditLog
+from app.models.sub_task import SubTask
+from app.models.task import Task
 from app.models.user import User
 from app.schemas.user import PasswordRemediationResponse, PasswordRemediationUser, UserResponse, UserUpdate
 
@@ -163,7 +168,39 @@ def delete_user(
         message="User deleted",
         details={"username": user.username},
     )
+
+    # Re-point dependent rows so deleting a user does not violate foreign keys.
+    db.query(SubTask).filter(SubTask.created_by == user.id).update(
+        {SubTask.created_by: current_user.id},
+        synchronize_session=False,
+    )
+    db.query(Task).filter(Task.created_by == user.id).update(
+        {Task.created_by: current_user.id},
+        synchronize_session=False,
+    )
+    db.query(Task).filter(Task.assigned_to == user.id).update(
+        {Task.assigned_to: None},
+        synchronize_session=False,
+    )
+    db.query(Activity).filter(Activity.created_by == user.id).update(
+        {Activity.created_by: None},
+        synchronize_session=False,
+    )
+    db.query(AuditLog).filter(AuditLog.user_id == user.id).update(
+        {AuditLog.user_id: None},
+        synchronize_session=False,
+    )
+
     db.delete(user)
-    db.commit()
+
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise api_error(
+            status_code=409,
+            code="USER_DELETE_CONFLICT",
+            message="User cannot be deleted because related records still exist",
+        )
 
     return {"message": "User deleted successfully"}
