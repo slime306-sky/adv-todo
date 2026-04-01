@@ -21,7 +21,9 @@ router = APIRouter(tags=["sub-tasks"])
 def _serialize_user_reference(user: User | None, fallback_id: int | None):
     if user:
         return {"id": user.id, "name": user.username}
-    return {"id": fallback_id, "name": "Unknown"}
+    if fallback_id is not None:
+        return {"id": fallback_id, "name": "Unknown"}
+    return None
 
 
 def _serialize_sub_task(sub_task: SubTask):

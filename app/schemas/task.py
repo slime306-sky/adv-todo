@@ -1,5 +1,5 @@
 ﻿from datetime import datetime
-from typing import Annotated
+from typing import Annotated,Optional
 
 from pydantic import BaseModel, Field, root_validator
 
@@ -51,7 +51,7 @@ class TaskResponse(BaseModel):
     estimated_days: int
     estimated_hours: int
     created_by: UserReference
-    assigned_to: UserReference
+    assigned_to: Optional[UserReference]
     version: int
     parent_task_id: int | None = None
 

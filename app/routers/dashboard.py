@@ -13,9 +13,13 @@ router = APIRouter(tags=["dashboard"])
 
 
 def _serialize_user_reference(user: User | None, fallback_id: int | None):
-    if user:
-        return {"id": user.id, "name": user.username}
-    return {"id": fallback_id, "name": "Unknown"}
+    if not user and fallback_id is None:
+        return None
+
+    return {
+        "id": user.id if user else fallback_id,
+        "name": user.username if user else "Unknown",
+    }
 
 
 def _serialize_recent_task(task: Task):
