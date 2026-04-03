@@ -6,7 +6,7 @@ from app.core.audit import log_audit_event
 from app.core.errors import api_error
 from app.core.security import get_current_user, get_db
 from app.models.sub_task import SubTask
-from app.models.task import Task
+from app.models.task import Task, TaskStatus
 from app.models.user import User
 from app.schemas.sub_task import (
     SubTaskCreate,
@@ -16,6 +16,7 @@ from app.schemas.sub_task import (
 )
 
 router = APIRouter(tags=["sub-tasks"])
+PRIORITY_TOTAL_TARGET = 100
 
 
 def _serialize_user_reference(user: User | None, fallback_id: int | None):
@@ -32,8 +33,11 @@ def _serialize_sub_task(sub_task: SubTask):
         "title": sub_task.title,
         "description": sub_task.description,
         "status": sub_task.status,
+        "priority": sub_task.priority,
         "estimated_days": sub_task.estimated_days,
         "estimated_hours": sub_task.estimated_hours,
+        "actual_days": sub_task.actual_days,
+        "actual_hours": sub_task.actual_hours,
         "created_at": sub_task.created_at,
         "task_id": sub_task.task_id,
         "created_by": _serialize_user_reference(sub_task.creator, sub_task.created_by),
@@ -63,6 +67,51 @@ def recalculate_task_estimated_time(db: Session, task_id: int):
     task.estimated_hours = total_hours % 24
 
 
+def sync_task_completion_status(db: Session, task_id: int):
+    task = db.query(Task).filter(Task.id == task_id).first()
+    if not task:
+        return
+
+    total_subtasks = (
+        db.query(func.count(SubTask.id)).filter(SubTask.task_id == task_id).scalar() or 0
+    )
+
+    if total_subtasks == 0:
+        return
+
+    completed_subtasks = (
+        db.query(func.count(SubTask.id))
+        .filter(SubTask.task_id == task_id)
+        .filter(SubTask.status == TaskStatus.complete.value)
+        .scalar()
+        or 0
+    )
+
+    if completed_subtasks == total_subtasks:
+        task.status = TaskStatus.complete.value
+
+
+def get_task_priority_total(db: Session, task_id: int) -> int:
+    return (
+        db.query(func.coalesce(func.sum(SubTask.priority), 0))
+        .filter(SubTask.task_id == task_id)
+        .scalar()
+        or 0
+    )
+
+
+def validate_priority_total(total_priority: int):
+    if total_priority != PRIORITY_TOTAL_TARGET:
+        raise api_error(
+            status_code=400,
+            code="INVALID_SUBTASK_PRIORITY_TOTAL",
+            message=(
+                "Sub-task priorities for a task must sum to exactly 100. "
+                f"Current total would be {total_priority}."
+            ),
+        )
+
+
 def ensure_user_can_manage_task(task: Task, user: User):
     if user.role != "admin" and task.assigned_to != user.id:
         raise api_error(
@@ -88,18 +137,25 @@ def create_sub_task(
     task = validate_task(db, sub_task.task_id)
     ensure_user_can_manage_task(task, current_user)
 
+    projected_total = get_task_priority_total(db, sub_task.task_id) + sub_task.priority
+    validate_priority_total(projected_total)
+
     new_sub_task = SubTask(
         title=sub_task.title,
         description=sub_task.description,
         status=sub_task.status.value,
+        priority=sub_task.priority,
         estimated_days=sub_task.estimated_days,
         estimated_hours=sub_task.estimated_hours,
+        actual_days=sub_task.actual_days,
+        actual_hours=sub_task.actual_hours,
         task_id=sub_task.task_id,
         created_by=current_user.id,
     )
 
     db.add(new_sub_task)
     recalculate_task_estimated_time(db, sub_task.task_id)
+    sync_task_completion_status(db, sub_task.task_id)
     db.commit()
     db.refresh(new_sub_task)
     log_audit_event(
@@ -210,28 +266,46 @@ def update_sub_task(
 
     update_data = sub_task_update.dict(exclude_unset=True)
 
-    if "status" in update_data and sub_task.status == "complete":
-        raise api_error(
-            status_code=400,
-            code="SUBTASK_ALREADY_COMPLETE",
-            message="A completed sub-task cannot be reopened",
-        )
-
-    new_task_id = update_data.get("task_id", sub_task.task_id)
-
-    validate_task(db, new_task_id)
-
     if "status" in update_data and update_data["status"] is not None:
+        if (
+            sub_task.status == TaskStatus.complete.value
+            and update_data["status"].value != TaskStatus.complete.value
+        ):
+            raise api_error(
+                status_code=400,
+                code="SUBTASK_ALREADY_COMPLETE",
+                message="A completed sub-task cannot be reopened",
+            )
         update_data["status"] = update_data["status"].value
 
     old_task_id = sub_task.task_id
+    new_task_id = update_data.get("task_id", old_task_id)
+    new_priority = update_data.get("priority", sub_task.priority)
+
+    validate_task(db, new_task_id)
+
+    old_task_projected_total = get_task_priority_total(db, old_task_id) - sub_task.priority
+    old_task_remaining_count = (
+        db.query(func.count(SubTask.id)).filter(SubTask.task_id == old_task_id).scalar() or 0
+    ) - 1
+
+    if new_task_id == old_task_id:
+        old_task_projected_total += new_priority
+        validate_priority_total(old_task_projected_total)
+    else:
+        if old_task_remaining_count > 0:
+            validate_priority_total(old_task_projected_total)
+        new_task_projected_total = get_task_priority_total(db, new_task_id) + new_priority
+        validate_priority_total(new_task_projected_total)
 
     for key, value in update_data.items():
         setattr(sub_task, key, value)
 
     recalculate_task_estimated_time(db, old_task_id)
+    sync_task_completion_status(db, old_task_id)
     if sub_task.task_id != old_task_id:
         recalculate_task_estimated_time(db, sub_task.task_id)
+        sync_task_completion_status(db, sub_task.task_id)
 
     log_audit_event(
         db=db,
@@ -266,6 +340,13 @@ def delete_sub_task(
         raise api_error(status_code=404, code="TASK_NOT_FOUND", message="Task not found")
     ensure_user_can_manage_task(task, current_user)
 
+    remaining_sub_task_count = (
+        db.query(func.count(SubTask.id)).filter(SubTask.task_id == sub_task.task_id).scalar() or 0
+    ) - 1
+    if remaining_sub_task_count > 0:
+        projected_total = get_task_priority_total(db, sub_task.task_id) - sub_task.priority
+        validate_priority_total(projected_total)
+
     task_id = sub_task.task_id
     log_audit_event(
         db=db,
@@ -278,6 +359,7 @@ def delete_sub_task(
     )
     db.delete(sub_task)
     recalculate_task_estimated_time(db, task_id)
+    sync_task_completion_status(db, task_id)
     db.commit()
 
     return {"message": "Sub task deleted successfully"}

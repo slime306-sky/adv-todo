@@ -1,4 +1,5 @@
 ﻿from fastapi import APIRouter, Depends, Query
+from fastapi import HTTPException
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, selectinload
 
@@ -8,8 +9,16 @@ from app.core.security import get_current_user, get_db, require_role
 from app.models.sub_task import SubTask
 from app.models.task import Task, TaskStatus
 from app.models.user import User
-from app.routers.sub_tasks import recalculate_task_estimated_time
+from app.routers.sub_tasks import (
+    ensure_user_can_manage_task,
+    get_task_priority_total,
+    recalculate_task_estimated_time,
+    sync_task_completion_status,
+    validate_priority_total,
+)
 from app.schemas.task import (
+    TaskPriorityBulkUpdateRequest,
+    TaskPriorityBulkUpdateResponse,
     TaskAdminListResponse,
     TaskAdminResponse,
     TaskCreate,
@@ -17,6 +26,7 @@ from app.schemas.task import (
     TaskListResponse,
     TaskProgressResponse,
     TaskResponse,
+    TaskTimelineResponse,
     TaskWithSubTasksResponse,
     TaskUpdate,
 )
@@ -38,12 +48,19 @@ def _serialize_sub_task(sub_task: SubTask):
         "title": sub_task.title,
         "description": sub_task.description,
         "status": sub_task.status,
+        "priority": sub_task.priority,
         "estimated_days": sub_task.estimated_days,
         "estimated_hours": sub_task.estimated_hours,
+        "actual_days": sub_task.actual_days,
+        "actual_hours": sub_task.actual_hours,
         "created_at": sub_task.created_at,
         "task_id": sub_task.task_id,
         "created_by": _serialize_user_reference(sub_task.creator, sub_task.created_by),
     }
+
+
+def _to_hours(days: int, hours: int) -> float:
+    return float((days * 24) + hours)
 
 
 def _serialize_task(task: Task, include_sub_tasks: bool = False):
@@ -106,13 +123,18 @@ def create_task(
         db.flush()
 
         if task.sub_tasks:
+            validate_priority_total(sum(sub_task.priority for sub_task in task.sub_tasks))
+
             for sub_task in task.sub_tasks:
                 new_sub_task = SubTask(
                     title=sub_task.title,
                     description=sub_task.description,
                     status=sub_task.status.value,
+                    priority=sub_task.priority,
                     estimated_days=sub_task.estimated_days,
                     estimated_hours=sub_task.estimated_hours,
+                    actual_days=sub_task.actual_days,
+                    actual_hours=sub_task.actual_hours,
                     task_id=new_task.id,
                     created_by=current_user.id,
                 )
@@ -120,8 +142,12 @@ def create_task(
                 created_sub_tasks.append(new_sub_task)
 
             recalculate_task_estimated_time(db, new_task.id)
+            sync_task_completion_status(db, new_task.id)
 
         db.commit()
+    except HTTPException:
+        db.rollback()
+        raise
     except Exception as exc:
         db.rollback()
         raise api_error(
@@ -352,6 +378,203 @@ def get_task_progress(
         "completed_subtasks": completed_subtasks,
         "progress_percentage": progress_percentage,
         "is_completed": total_subtasks > 0 and completed_subtasks == total_subtasks,
+    }
+
+
+@router.get("/tasks/{task_id}/timeline", response_model=TaskTimelineResponse)
+def get_task_timeline(
+    task_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    task = (
+        db.query(Task)
+        .options(selectinload(Task.sub_tasks))
+        .filter(Task.id == task_id)
+        .first()
+    )
+
+    if not task:
+        raise api_error(status_code=404, code="TASK_NOT_FOUND", message="Task not found")
+
+    if task.assigned_to != current_user.id and current_user.role != "admin":
+        raise api_error(
+            status_code=403,
+            code="FORBIDDEN_TASK_ACCESS",
+            message="Not authorized",
+        )
+
+    total_estimated_hours = sum(
+        _to_hours(sub_task.estimated_days, sub_task.estimated_hours)
+        for sub_task in task.sub_tasks
+    )
+    total_actual_hours = sum(
+        _to_hours(sub_task.actual_days, sub_task.actual_hours) for sub_task in task.sub_tasks
+    )
+
+    sub_task_count = len(task.sub_tasks)
+    total_priority = sum(sub_task.priority for sub_task in task.sub_tasks)
+
+    sub_tasks_timeline = []
+    total_expected_hours = 0.0
+
+    for sub_task in task.sub_tasks:
+        if sub_task_count == 0:
+            weight = 0.0
+        elif total_priority > 0:
+            weight = sub_task.priority / total_priority
+        else:
+            weight = 1.0 / sub_task_count
+
+        expected_hours = (
+            round(total_estimated_hours * weight, 2)
+            if sub_task.status == TaskStatus.complete.value
+            else 0.0
+        )
+        total_expected_hours += expected_hours
+
+        sub_tasks_timeline.append(
+            {
+                "sub_task_id": sub_task.id,
+                "title": sub_task.title,
+                "status": sub_task.status,
+                "priority": sub_task.priority,
+                "estimated_hours": round(
+                    _to_hours(sub_task.estimated_days, sub_task.estimated_hours), 2
+                ),
+                "actual_hours": round(
+                    _to_hours(sub_task.actual_days, sub_task.actual_hours), 2
+                ),
+                "expected_hours": expected_hours,
+            }
+        )
+
+    if total_estimated_hours > 0:
+        estimated_percentage = 100.0
+        actual_percentage = round((total_actual_hours / total_estimated_hours) * 100, 2)
+        expected_percentage = round((total_expected_hours / total_estimated_hours) * 100, 2)
+    else:
+        estimated_percentage = 0.0
+        actual_percentage = 0.0
+        expected_percentage = 0.0
+
+    return {
+        "task_id": task.id,
+        "task_title": task.title,
+        "total_estimated_hours": round(total_estimated_hours, 2),
+        "total_actual_hours": round(total_actual_hours, 2),
+        "total_expected_hours": round(total_expected_hours, 2),
+        "bars": [
+            {
+                "key": "estimated",
+                "label": "How much time it will take",
+                "hours": round(total_estimated_hours, 2),
+                "percentage": estimated_percentage,
+            },
+            {
+                "key": "actual",
+                "label": "How much time user took",
+                "hours": round(total_actual_hours, 2),
+                "percentage": actual_percentage,
+            },
+            {
+                "key": "expected",
+                "label": "How much time it should have taken",
+                "hours": round(total_expected_hours, 2),
+                "percentage": expected_percentage,
+            },
+        ],
+        "sub_tasks": sub_tasks_timeline,
+    }
+
+
+@router.put(
+    "/tasks/{task_id}/subtasks/priorities",
+    response_model=TaskPriorityBulkUpdateResponse,
+)
+@router.post(
+    "/tasks/{task_id}/subtasks/priorities",
+    response_model=TaskPriorityBulkUpdateResponse,
+)
+def update_task_sub_task_priorities(
+    task_id: int,
+    payload: TaskPriorityBulkUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    task = (
+        db.query(Task)
+        .options(selectinload(Task.sub_tasks))
+        .filter(Task.id == task_id)
+        .first()
+    )
+    if not task:
+        raise api_error(status_code=404, code="TASK_NOT_FOUND", message="Task not found")
+
+    ensure_user_can_manage_task(task, current_user)
+
+    if not task.sub_tasks:
+        raise api_error(
+            status_code=400,
+            code="SUBTASKS_NOT_FOUND",
+            message="Task has no sub-tasks to reprioritize",
+        )
+
+    if not payload.items:
+        raise api_error(
+            status_code=400,
+            code="EMPTY_PRIORITY_PAYLOAD",
+            message="Provide all sub-task priorities in items",
+        )
+
+    if len(payload.items) != len(task.sub_tasks):
+        raise api_error(
+            status_code=400,
+            code="INCOMPLETE_PRIORITY_PAYLOAD",
+            message="Payload must include every sub-task exactly once",
+        )
+
+    payload_ids = [item.sub_task_id for item in payload.items]
+    if len(set(payload_ids)) != len(payload_ids):
+        raise api_error(
+            status_code=400,
+            code="DUPLICATE_SUBTASK_IN_PAYLOAD",
+            message="Each sub-task id must appear only once",
+        )
+
+    existing_ids = {sub_task.id for sub_task in task.sub_tasks}
+    if set(payload_ids) != existing_ids:
+        raise api_error(
+            status_code=400,
+            code="INVALID_SUBTASK_SET",
+            message="Payload sub-task ids must exactly match this task's sub-tasks",
+        )
+
+    total_priority = sum(item.priority for item in payload.items)
+    validate_priority_total(total_priority)
+
+    priority_map = {item.sub_task_id: item.priority for item in payload.items}
+    for sub_task in task.sub_tasks:
+        sub_task.priority = priority_map[sub_task.id]
+
+    db.flush()
+    validate_priority_total(get_task_priority_total(db, task_id))
+
+    log_audit_event(
+        db=db,
+        action="UPDATE",
+        entity_type="task",
+        entity_id=task.id,
+        user_id=current_user.id,
+        message="Sub-task priorities updated in bulk",
+        details={"sub_task_count": len(payload.items), "total_priority": total_priority},
+    )
+    db.commit()
+
+    return {
+        "task_id": task.id,
+        "total_priority": total_priority,
+        "items": payload.items,
     }
 
 

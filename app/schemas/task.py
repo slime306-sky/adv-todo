@@ -13,8 +13,11 @@ class TaskSubTaskCreate(BaseModel):
     title: str
     description: str
     status: SubTaskStatus = SubTaskStatus.not_complete
+    priority: Annotated[int, Field(ge=0, le=100)] = 0
     estimated_days: Annotated[int, Field(ge=0)] = 0
     estimated_hours: Annotated[int, Field(ge=0, lt=24)] = 0
+    actual_days: Annotated[int, Field(ge=0)] = 0
+    actual_hours: Annotated[int, Field(ge=0, lt=24)] = 0
 
 
 class TaskCreate(BaseModel):
@@ -106,6 +109,48 @@ class TaskProgressResponse(BaseModel):
     completed_subtasks: int
     progress_percentage: float
     is_completed: bool
+
+
+class TimelineBar(BaseModel):
+    key: str
+    label: str
+    hours: float
+    percentage: float
+
+
+class SubTaskTimelineItem(BaseModel):
+    sub_task_id: int
+    title: str
+    status: str
+    priority: int
+    estimated_hours: float
+    actual_hours: float
+    expected_hours: float
+
+
+class TaskTimelineResponse(BaseModel):
+    task_id: int
+    task_title: str
+    total_estimated_hours: float
+    total_actual_hours: float
+    total_expected_hours: float
+    bars: list[TimelineBar]
+    sub_tasks: list[SubTaskTimelineItem]
+
+
+class SubTaskPriorityItem(BaseModel):
+    sub_task_id: int
+    priority: Annotated[int, Field(ge=0, le=100)]
+
+
+class TaskPriorityBulkUpdateRequest(BaseModel):
+    items: list[SubTaskPriorityItem] = Field(default_factory=list)
+
+
+class TaskPriorityBulkUpdateResponse(BaseModel):
+    task_id: int
+    total_priority: int
+    items: list[SubTaskPriorityItem]
 
 
 class TaskUpdate(BaseModel):

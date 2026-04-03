@@ -73,8 +73,11 @@ def _repair_legacy_sqlite_sub_tasks_table():
                         title VARCHAR NOT NULL,
                         description VARCHAR,
                         status VARCHAR,
+                        priority INTEGER NOT NULL DEFAULT 0,
                         estimated_days INTEGER,
                         estimated_hours INTEGER,
+                        actual_days INTEGER NOT NULL DEFAULT 0,
+                        actual_hours INTEGER NOT NULL DEFAULT 0,
                         created_at DATETIME,
                         task_id INTEGER NOT NULL,
                         created_by INTEGER NOT NULL,
@@ -94,8 +97,11 @@ def _repair_legacy_sqlite_sub_tasks_table():
                         title,
                         description,
                         status,
+                        priority,
                         estimated_days,
                         estimated_hours,
+                        actual_days,
+                        actual_hours,
                         created_at,
                         task_id,
                         created_by
@@ -105,8 +111,11 @@ def _repair_legacy_sqlite_sub_tasks_table():
                         title,
                         description,
                         COALESCE(status, 'not complete'),
+                        0,
                         COALESCE(estimated_days, 0),
                         COALESCE(estimated_hours, 0),
+                        0,
+                        0,
                         created_at,
                         task_id,
                         created_by
@@ -119,6 +128,41 @@ def _repair_legacy_sqlite_sub_tasks_table():
             connection.execute(text("ALTER TABLE sub_tasks_new RENAME TO sub_tasks"))
         finally:
             connection.execute(text("PRAGMA foreign_keys = ON"))
+
+
+def _ensure_sqlite_sub_tasks_timeline_columns():
+    if not engine.url.drivername.startswith("sqlite"):
+        return
+
+    with engine.begin() as connection:
+        table_exists = connection.execute(
+            text(
+                "SELECT name FROM sqlite_master "
+                "WHERE type = 'table' AND name = 'sub_tasks'"
+            )
+        ).first()
+
+        if not table_exists:
+            return
+
+        existing_columns = {
+            row[1] for row in connection.execute(text("PRAGMA table_info(sub_tasks)"))
+        }
+
+        if "priority" not in existing_columns:
+            connection.execute(
+                text("ALTER TABLE sub_tasks ADD COLUMN priority INTEGER NOT NULL DEFAULT 0")
+            )
+
+        if "actual_days" not in existing_columns:
+            connection.execute(
+                text("ALTER TABLE sub_tasks ADD COLUMN actual_days INTEGER NOT NULL DEFAULT 0")
+            )
+
+        if "actual_hours" not in existing_columns:
+            connection.execute(
+                text("ALTER TABLE sub_tasks ADD COLUMN actual_hours INTEGER NOT NULL DEFAULT 0")
+            )
 
 
 def _ensure_audit_logs_cascade_delete():
@@ -187,6 +231,7 @@ def _ensure_audit_logs_cascade_delete():
 
 _ensure_sqlite_tasks_columns()
 _repair_legacy_sqlite_sub_tasks_table()
+_ensure_sqlite_sub_tasks_timeline_columns()
 _ensure_audit_logs_cascade_delete()
 
 app = FastAPI()
@@ -212,6 +257,11 @@ def log_invalid_password_hash_count():
 # CORS â€” update ALLOWED_ORIGINS env var in Render to restrict to your frontend URL
 allowed_origins = os.environ.get("ALLOWED_ORIGINS", "").split(",")
 
+if allowed_origins == [""]:
+    allowed_origins = [
+        "http://localhost:3000",
+    ]
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
@@ -220,10 +270,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-if allowed_origins == [""]:
-    allowed_origins = [
-        "http://localhost:3000",
-    ]
 
 
 @app.middleware("http")

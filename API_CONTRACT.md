@@ -1,7 +1,7 @@
 # To-Do App API Contract
 
-Version: 2.0.0
-Generated from current implementation on 2026-03-19.
+Version: 2.1.0
+Generated from current implementation on 2026-04-03.
 
 ## 1. Service Overview
 
@@ -84,6 +84,12 @@ Notes:
 - TASK_NOT_COMPLETE
 - SUBTASK_NOT_FOUND
 - SUBTASK_ALREADY_COMPLETE
+- INVALID_SUBTASK_PRIORITY_TOTAL
+- SUBTASKS_NOT_FOUND
+- EMPTY_PRIORITY_PAYLOAD
+- INCOMPLETE_PRIORITY_PAYLOAD
+- DUPLICATE_SUBTASK_IN_PAYLOAD
+- INVALID_SUBTASK_SET
 - ACTIVITY_NOT_FOUND
 - ACTIVITY_ALREADY_COMPLETE
 - INVALID_ACTIVITY_STATUS
@@ -342,15 +348,21 @@ Request body:
       "title": "Design request schema",
       "description": "Add nested subtask create fields",
       "status": "not complete",
+      "priority": 90,
       "estimated_days": 0,
-      "estimated_hours": 3
+      "estimated_hours": 3,
+      "actual_days": 0,
+      "actual_hours": 2
     },
     {
       "title": "Implement router",
       "description": "Create task and subtasks atomically",
       "status": "not complete",
+      "priority": 10,
       "estimated_days": 0,
-      "estimated_hours": 5
+      "estimated_hours": 5,
+      "actual_days": 0,
+      "actual_hours": 1
     }
   ]
 }
@@ -362,6 +374,7 @@ Nested validation:
 - sub_task_count is optional.
 - If sub_task_count is provided, sub_tasks must also be provided.
 - If both are provided, sub_task_count must equal len(sub_tasks).
+- If sub_tasks is provided and not empty, sum of all sub_task.priority values must be exactly 100.
 
 Success 200:
 
@@ -391,8 +404,11 @@ Success 200:
       "title": "Design request schema",
       "description": "Add nested subtask create fields",
       "status": "not complete",
+      "priority": 90,
       "estimated_days": 0,
       "estimated_hours": 3,
+      "actual_days": 0,
+      "actual_hours": 2,
       "created_at": "2026-03-03T09:05:00",
       "task_id": 10,
       "created_by": {
@@ -408,6 +424,7 @@ Success 200:
 Errors:
 
 - 404 ASSIGNED_USER_NOT_FOUND
+- 400 INVALID_SUBTASK_PRIORITY_TOTAL
 - 500 TRANSACTION_FAILED
 - 422 VALIDATION_ERROR
 
@@ -561,8 +578,11 @@ Success 200:
       "title": "Design request schema",
       "description": "Add nested subtask create fields",
       "status": "not complete",
+      "priority": 90,
       "estimated_days": 0,
       "estimated_hours": 3,
+      "actual_days": 0,
+      "actual_hours": 2,
       "created_at": "2026-03-03T09:05:00",
       "task_id": 10,
       "created_by": {
@@ -603,6 +623,136 @@ Errors:
 
 - 404 TASK_NOT_FOUND
 - 403 FORBIDDEN_TASK_ACCESS
+
+### GET /tasks/{task_id}/timeline
+
+Auth: authenticated user
+
+Rules:
+
+- Assigned user and admin can access.
+
+Success 200:
+
+```json
+{
+  "task_id": 10,
+  "task_title": "Build API docs",
+  "total_estimated_hours": 8.0,
+  "total_actual_hours": 3.0,
+  "total_expected_hours": 7.2,
+  "bars": [
+    {
+      "key": "estimated",
+      "label": "How much time it will take",
+      "hours": 8.0,
+      "percentage": 100.0
+    },
+    {
+      "key": "actual",
+      "label": "How much time user took",
+      "hours": 3.0,
+      "percentage": 37.5
+    },
+    {
+      "key": "expected",
+      "label": "How much time it should have taken",
+      "hours": 7.2,
+      "percentage": 90.0
+    }
+  ],
+  "sub_tasks": [
+    {
+      "sub_task_id": 101,
+      "title": "Design request schema",
+      "status": "complete",
+      "priority": 90,
+      "estimated_hours": 3.0,
+      "actual_hours": 2.0,
+      "expected_hours": 7.2
+    },
+    {
+      "sub_task_id": 102,
+      "title": "Implement router",
+      "status": "not complete",
+      "priority": 10,
+      "estimated_hours": 5.0,
+      "actual_hours": 1.0,
+      "expected_hours": 0.0
+    }
+  ]
+}
+```
+
+Notes:
+
+- expected bar uses priority-weighted share of total estimated hours.
+- If total priority for the task is 0, timeline uses equal weights across subtasks.
+- expected hours are counted only for completed subtasks.
+
+Errors:
+
+- 404 TASK_NOT_FOUND
+- 403 FORBIDDEN_TASK_ACCESS
+
+### PUT /tasks/{task_id}/subtasks/priorities
+
+### POST /tasks/{task_id}/subtasks/priorities
+
+Auth: authenticated user
+
+Rules:
+
+- Allowed for admin or user assigned to parent task.
+- Payload must include every sub-task for the task exactly once.
+- items[].priority values must sum to exactly 100.
+
+Request body:
+
+```json
+{
+  "items": [
+    {
+      "sub_task_id": 101,
+      "priority": 90
+    },
+    {
+      "sub_task_id": 102,
+      "priority": 10
+    }
+  ]
+}
+```
+
+Success 200:
+
+```json
+{
+  "task_id": 10,
+  "total_priority": 100,
+  "items": [
+    {
+      "sub_task_id": 101,
+      "priority": 90
+    },
+    {
+      "sub_task_id": 102,
+      "priority": 10
+    }
+  ]
+}
+```
+
+Errors:
+
+- 404 TASK_NOT_FOUND
+- 403 FORBIDDEN_TASK_ACCESS
+- 400 SUBTASKS_NOT_FOUND
+- 400 EMPTY_PRIORITY_PAYLOAD
+- 400 INCOMPLETE_PRIORITY_PAYLOAD
+- 400 DUPLICATE_SUBTASK_IN_PAYLOAD
+- 400 INVALID_SUBTASK_SET
+- 400 INVALID_SUBTASK_PRIORITY_TOTAL
 
 ### PUT /tasks/{task_id}
 
@@ -693,8 +843,11 @@ Request body:
   "title": "Design schema",
   "description": "Prepare fields",
   "status": "not complete",
+  "priority": 100,
   "estimated_days": 0,
   "estimated_hours": 4,
+  "actual_days": 0,
+  "actual_hours": 2,
   "task_id": 10
 }
 ```
@@ -703,6 +856,7 @@ Rules:
 
 - task_id must exist.
 - Allowed for admin or user assigned to parent task.
+- After creation, priorities for all subtasks under task_id must sum to exactly 100.
 
 Success 200:
 
@@ -712,6 +866,7 @@ Errors:
 
 - 404 TASK_NOT_FOUND
 - 403 FORBIDDEN_TASK_ACCESS
+- 400 INVALID_SUBTASK_PRIORITY_TOTAL
 - 422 VALIDATION_ERROR
 
 ### GET /subtasks
@@ -765,8 +920,11 @@ Request body (all fields optional):
   "title": "Refine schema",
   "description": "Add constraints",
   "status": "complete",
+  "priority": 90,
   "estimated_days": 0,
   "estimated_hours": 5,
+  "actual_days": 0,
+  "actual_hours": 3,
   "task_id": 11
 }
 ```
@@ -776,6 +934,7 @@ Rules:
 - Completed subtasks cannot be reopened.
 - New task_id, if provided, must exist.
 - On update, parent task estimate totals are recalculated.
+- After update/move, each affected task that still has subtasks must have priority total exactly 100.
 
 Success 200:
 
@@ -786,6 +945,7 @@ Errors:
 - 404 SUBTASK_NOT_FOUND
 - 404 TASK_NOT_FOUND
 - 400 SUBTASK_ALREADY_COMPLETE
+- 400 INVALID_SUBTASK_PRIORITY_TOTAL
 - 403 FORBIDDEN_TASK_ACCESS
 
 ### DELETE /subtasks/{sub_task_id}
@@ -795,6 +955,7 @@ Auth: authenticated user
 Rules:
 
 - caller must be admin or assigned user of parent task.
+- Deletion is allowed if remaining subtasks are zero, or if remaining priorities still sum to exactly 100.
 
 Success 200:
 
@@ -808,6 +969,7 @@ Errors:
 
 - 404 SUBTASK_NOT_FOUND
 - 404 TASK_NOT_FOUND
+- 400 INVALID_SUBTASK_PRIORITY_TOTAL
 - 403 FORBIDDEN_TASK_ACCESS
 
 ## 5.5 Activities
@@ -1039,8 +1201,11 @@ Allowed values:
 ### 6.3 Numeric Constraints
 
 - task sub_task_count >= 0
+- subtask priority >= 0 and <= 100
 - subtask estimated_days >= 0
 - subtask estimated_hours >= 0 and < 24
+- subtask actual_days >= 0
+- subtask actual_hours >= 0 and < 24
 
 ## 7. Audit Logging Behavior
 

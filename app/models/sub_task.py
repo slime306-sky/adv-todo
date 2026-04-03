@@ -19,8 +19,11 @@ class SubTask(Base):
     title = Column(String, nullable=False)
     description = Column(String)
     status = Column(String, default=SubTaskStatus.not_complete.value)
+    priority = Column(Integer, default=0)
     estimated_days = Column(Integer, default=0)
     estimated_hours = Column(Integer, default=0)
+    actual_days = Column(Integer, default=0)
+    actual_hours = Column(Integer, default=0)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     task_id = Column(Integer, ForeignKey("tasks.id"), nullable=False)
