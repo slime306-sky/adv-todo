@@ -42,6 +42,7 @@ class SubTaskResponse(BaseModel):
     actual_days: int
     actual_hours: int
     created_at: datetime
+    completed_at: datetime | None = None
     task_id: int
     created_by: UserReference
 

@@ -79,6 +79,7 @@ def _repair_legacy_sqlite_sub_tasks_table():
                         actual_days INTEGER NOT NULL DEFAULT 0,
                         actual_hours INTEGER NOT NULL DEFAULT 0,
                         created_at DATETIME,
+                        completed_at DATETIME,
                         task_id INTEGER NOT NULL,
                         created_by INTEGER NOT NULL,
                         PRIMARY KEY (id),
@@ -103,6 +104,7 @@ def _repair_legacy_sqlite_sub_tasks_table():
                         actual_days,
                         actual_hours,
                         created_at,
+                        completed_at,
                         task_id,
                         created_by
                     )
@@ -117,6 +119,7 @@ def _repair_legacy_sqlite_sub_tasks_table():
                         0,
                         0,
                         created_at,
+                        NULL,
                         task_id,
                         created_by
                     FROM sub_tasks
@@ -163,6 +166,9 @@ def _ensure_sqlite_sub_tasks_timeline_columns():
             connection.execute(
                 text("ALTER TABLE sub_tasks ADD COLUMN actual_hours INTEGER NOT NULL DEFAULT 0")
             )
+
+        if "completed_at" not in existing_columns:
+            connection.execute(text("ALTER TABLE sub_tasks ADD COLUMN completed_at DATETIME"))
 
 
 def _ensure_audit_logs_cascade_delete():

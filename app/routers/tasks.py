@@ -54,6 +54,7 @@ def _serialize_sub_task(sub_task: SubTask):
         "actual_days": sub_task.actual_days,
         "actual_hours": sub_task.actual_hours,
         "created_at": sub_task.created_at,
+        "completed_at": sub_task.completed_at,
         "task_id": sub_task.task_id,
         "created_by": _serialize_user_reference(sub_task.creator, sub_task.created_by),
     }

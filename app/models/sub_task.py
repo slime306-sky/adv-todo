@@ -25,6 +25,7 @@ class SubTask(Base):
     actual_days = Column(Integer, default=0)
     actual_hours = Column(Integer, default=0)
     created_at = Column(DateTime, default=datetime.utcnow)
+    completed_at = Column(DateTime, nullable=True)
 
     task_id = Column(Integer, ForeignKey("tasks.id"), nullable=False)
     created_by = Column(Integer, ForeignKey("users.id"), nullable=False)

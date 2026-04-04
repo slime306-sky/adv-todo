@@ -1,4 +1,6 @@
 ﻿from fastapi import APIRouter, Depends, Query
+from datetime import datetime
+from math import floor
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
@@ -39,9 +41,22 @@ def _serialize_sub_task(sub_task: SubTask):
         "actual_days": sub_task.actual_days,
         "actual_hours": sub_task.actual_hours,
         "created_at": sub_task.created_at,
+        "completed_at": sub_task.completed_at,
         "task_id": sub_task.task_id,
         "created_by": _serialize_user_reference(sub_task.creator, sub_task.created_by),
     }
+
+
+def _auto_fill_actual_time_on_completion(sub_task: SubTask):
+    if not sub_task.created_at or not sub_task.completed_at:
+        return
+
+    duration_seconds = max(
+        0.0, (sub_task.completed_at - sub_task.created_at).total_seconds()
+    )
+    total_hours = int(floor(duration_seconds / 3600))
+    sub_task.actual_days = total_hours // 24
+    sub_task.actual_hours = total_hours % 24
 
 
 def recalculate_task_estimated_time(db: Session, task_id: int):
@@ -152,6 +167,12 @@ def create_sub_task(
         task_id=sub_task.task_id,
         created_by=current_user.id,
     )
+
+    if new_sub_task.status == TaskStatus.complete.value:
+        completion_time = datetime.utcnow()
+        new_sub_task.created_at = completion_time
+        new_sub_task.completed_at = completion_time
+        _auto_fill_actual_time_on_completion(new_sub_task)
 
     db.add(new_sub_task)
     recalculate_task_estimated_time(db, sub_task.task_id)
@@ -278,6 +299,7 @@ def update_sub_task(
             )
         update_data["status"] = update_data["status"].value
 
+    old_status = sub_task.status
     old_task_id = sub_task.task_id
     new_task_id = update_data.get("task_id", old_task_id)
     new_priority = update_data.get("priority", sub_task.priority)
@@ -300,6 +322,10 @@ def update_sub_task(
 
     for key, value in update_data.items():
         setattr(sub_task, key, value)
+
+    if old_status != TaskStatus.complete.value and sub_task.status == TaskStatus.complete.value:
+        sub_task.completed_at = datetime.utcnow()
+        _auto_fill_actual_time_on_completion(sub_task)
 
     recalculate_task_estimated_time(db, old_task_id)
     sync_task_completion_status(db, old_task_id)

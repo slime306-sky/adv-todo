@@ -1,6 +1,6 @@
 # To-Do App API Contract
 
-Version: 2.1.0
+Version: 2.2.0
 Generated from current implementation on 2026-04-03.
 
 ## 1. Service Overview
@@ -689,6 +689,7 @@ Notes:
 - expected bar uses priority-weighted share of total estimated hours.
 - If total priority for the task is 0, timeline uses equal weights across subtasks.
 - expected hours are counted only for completed subtasks.
+- actual time is derived from each sub-task's `created_at` and `completed_at` timestamps when the sub-task is marked complete.
 
 Errors:
 
@@ -846,8 +847,6 @@ Request body:
   "priority": 100,
   "estimated_days": 0,
   "estimated_hours": 4,
-  "actual_days": 0,
-  "actual_hours": 2,
   "task_id": 10
 }
 ```
@@ -857,10 +856,13 @@ Rules:
 - task_id must exist.
 - Allowed for admin or user assigned to parent task.
 - After creation, priorities for all subtasks under task_id must sum to exactly 100.
+- `actual_days` and `actual_hours` are system-populated when a sub-task is completed; clients do not need to send them for completion flows.
 
 Success 200:
 
 SubTaskResponse shape.
+
+Returned subtask fields now include `completed_at` and may include system-calculated `actual_days` / `actual_hours` after completion.
 
 Errors:
 
@@ -923,8 +925,6 @@ Request body (all fields optional):
   "priority": 90,
   "estimated_days": 0,
   "estimated_hours": 5,
-  "actual_days": 0,
-  "actual_hours": 3,
   "task_id": 11
 }
 ```
@@ -935,10 +935,13 @@ Rules:
 - New task_id, if provided, must exist.
 - On update, parent task estimate totals are recalculated.
 - After update/move, each affected task that still has subtasks must have priority total exactly 100.
+- When status changes to `complete`, backend sets `completed_at` automatically and calculates `actual_days` / `actual_hours` from `created_at` to `completed_at`.
 
 Success 200:
 
 SubTaskResponse shape.
+
+Returned subtask fields now include `completed_at` and the auto-calculated actual time values.
 
 Errors:
 
@@ -1206,6 +1209,12 @@ Allowed values:
 - subtask estimated_hours >= 0 and < 24
 - subtask actual_days >= 0
 - subtask actual_hours >= 0 and < 24
+
+### 6.4 Completion Time Rules
+
+- When a sub-task transitions to `complete`, the backend sets `completed_at` automatically.
+- `actual_days` and `actual_hours` are derived from `completed_at - created_at`.
+- Clients may still send actual time fields on create/update, but completion flows should rely on the automatic calculation.
 
 ## 7. Audit Logging Behavior
 
