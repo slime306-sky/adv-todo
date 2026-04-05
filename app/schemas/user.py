@@ -1,4 +1,4 @@
-﻿from pydantic import BaseModel
+﻿from pydantic import BaseModel, Field
 
 
 class UserCreate(BaseModel):
@@ -13,11 +13,17 @@ class UserReference(BaseModel):
     name: str
 
 
+class DepartmentReference(BaseModel):
+    id: int
+    name: str
+
+
 class UserResponse(BaseModel):
     id: int
     name: str
     email: str
     role: str
+    departments: list[DepartmentReference] = Field(default_factory=list)
 
     class Config:
         orm_mode = True

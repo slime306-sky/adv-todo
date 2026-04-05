@@ -15,29 +15,61 @@ from app.core.errors import (
 )
 from app.core.security import is_supported_password_hash
 from app.models.user import User
-from app.routers import activities, audit_logs, auth, dashboard, sub_tasks, tasks, users
+from app.routers import activities, audit_logs, auth, dashboard, departments, sub_tasks, tasks, users
 
 Base.metadata.create_all(bind=engine)
 
 
 def _ensure_sqlite_tasks_columns():
-    if not engine.url.drivername.startswith("sqlite"):
-        return
-
     with engine.begin() as connection:
-        existing_columns = {
-            row[1] for row in connection.execute(text("PRAGMA table_info(tasks)"))
-        }
+        if engine.url.drivername.startswith("sqlite"):
+            existing_columns = {
+                row[1] for row in connection.execute(text("PRAGMA table_info(tasks)"))
+            }
 
-        if "version" not in existing_columns:
-            connection.execute(
-                text("ALTER TABLE tasks ADD COLUMN version INTEGER NOT NULL DEFAULT 1")
-            )
+            if "version_major" not in existing_columns:
+                connection.execute(
+                    text("ALTER TABLE tasks ADD COLUMN version_major INTEGER NOT NULL DEFAULT 1")
+                )
 
-        if "parent_task_id" not in existing_columns:
-            connection.execute(
-                text("ALTER TABLE tasks ADD COLUMN parent_task_id INTEGER")
+            if "version_minor" not in existing_columns:
+                connection.execute(
+                    text("ALTER TABLE tasks ADD COLUMN version_minor INTEGER NOT NULL DEFAULT 0")
+                )
+
+            if "version_patch" not in existing_columns:
+                connection.execute(
+                    text("ALTER TABLE tasks ADD COLUMN version_patch INTEGER NOT NULL DEFAULT 0")
+                )
+
+            if "parent_task_id" not in existing_columns:
+                connection.execute(
+                    text("ALTER TABLE tasks ADD COLUMN parent_task_id INTEGER")
+                )
+            return
+
+        # PostgreSQL and other backends that support IF NOT EXISTS.
+        connection.execute(
+            text(
+                "ALTER TABLE tasks "
+                "ADD COLUMN IF NOT EXISTS version_major INTEGER NOT NULL DEFAULT 1"
             )
+        )
+        connection.execute(
+            text(
+                "ALTER TABLE tasks "
+                "ADD COLUMN IF NOT EXISTS version_minor INTEGER NOT NULL DEFAULT 0"
+            )
+        )
+        connection.execute(
+            text(
+                "ALTER TABLE tasks "
+                "ADD COLUMN IF NOT EXISTS version_patch INTEGER NOT NULL DEFAULT 0"
+            )
+        )
+        connection.execute(
+            text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS parent_task_id INTEGER")
+        )
 
 
 def _repair_legacy_sqlite_sub_tasks_table():
@@ -294,6 +326,7 @@ app.add_exception_handler(Exception, unhandled_exception_handler)
 app.include_router(auth.router)
 app.include_router(tasks.router)
 app.include_router(users.router)
+app.include_router(departments.router)
 app.include_router(activities.router)
 app.include_router(sub_tasks.router)
 app.include_router(audit_logs.router)

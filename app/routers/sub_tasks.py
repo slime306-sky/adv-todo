@@ -6,14 +6,18 @@ from sqlalchemy.orm import Session
 
 from app.core.audit import log_audit_event
 from app.core.errors import api_error
-from app.core.security import get_current_user, get_db
+from app.core.security import get_current_user, get_db, require_role
 from app.models.sub_task import SubTask
+from app.models.sub_task_update_request import SubTaskUpdateRequest, SubTaskUpdateRequestStatus
 from app.models.task import Task, TaskStatus
 from app.models.user import User
 from app.schemas.sub_task import (
     SubTaskCreate,
     SubTaskListResponse,
     SubTaskResponse,
+    SubTaskUpdateRequestDecision,
+    SubTaskUpdateRequestListResponse,
+    SubTaskUpdateRequestResponse,
     SubTaskUpdate,
 )
 
@@ -44,6 +48,47 @@ def _serialize_sub_task(sub_task: SubTask):
         "completed_at": sub_task.completed_at,
         "task_id": sub_task.task_id,
         "created_by": _serialize_user_reference(sub_task.creator, sub_task.created_by),
+        "assigned_to": _serialize_user_reference(sub_task.assignee, sub_task.assigned_to),
+    }
+
+
+def resolve_assigned_user(
+    db: Session,
+    assigned_to: int | None,
+    assigned_to_username: str | None,
+    current_user: User,
+):
+    if current_user.role != "admin":
+        return current_user
+
+    if assigned_to_username:
+        user = db.query(User).filter(User.username == assigned_to_username).first()
+    elif assigned_to is not None:
+        user = db.query(User).filter(User.id == assigned_to).first()
+    else:
+        user = current_user
+
+    if not user:
+        raise api_error(
+            status_code=404,
+            code="ASSIGNED_USER_NOT_FOUND",
+            message="Assigned user not found",
+        )
+
+    return user
+
+
+def _serialize_sub_task_update_request(request: SubTaskUpdateRequest):
+    return {
+        "id": request.id,
+        "sub_task_id": request.sub_task_id,
+        "requested_by": _serialize_user_reference(request.requester, request.requested_by),
+        "status": request.status,
+        "requested_changes": request.requested_changes,
+        "review_comment": request.review_comment,
+        "reviewed_by": _serialize_user_reference(request.reviewer, request.reviewed_by),
+        "created_at": request.created_at,
+        "reviewed_at": request.reviewed_at,
     }
 
 
@@ -128,12 +173,23 @@ def validate_priority_total(total_priority: int):
 
 
 def ensure_user_can_manage_task(task: Task, user: User):
-    if user.role != "admin" and task.assigned_to != user.id:
-        raise api_error(
-            status_code=403,
-            code="FORBIDDEN_TASK_ACCESS",
-            message="Not authorized",
-        )
+    if user.role == "admin":
+        return
+
+    if task.created_by == user.id:
+        return
+
+    if any(sub_task.assigned_to == user.id for sub_task in task.sub_tasks):
+        return
+
+    if task.parent_task_id is not None and task.parent_task and task.parent_task.created_by == user.id:
+        return
+
+    raise api_error(
+        status_code=403,
+        code="FORBIDDEN_TASK_ACCESS",
+        message="Not authorized",
+    )
 
 
 def validate_task(db: Session, task_id: int):
@@ -141,6 +197,81 @@ def validate_task(db: Session, task_id: int):
     if not task:
         raise api_error(status_code=404, code="TASK_NOT_FOUND", message="Task not found")
     return task
+
+
+def _normalize_update_data(db: Session, sub_task: SubTask, update_data: dict):
+    if "status" in update_data and update_data["status"] is not None:
+        if (
+            sub_task.status == TaskStatus.complete.value
+            and update_data["status"].value != TaskStatus.complete.value
+        ):
+            raise api_error(
+                status_code=400,
+                code="SUBTASK_ALREADY_COMPLETE",
+                message="A completed sub-task cannot be reopened",
+            )
+        update_data["status"] = update_data["status"].value
+
+    if "assigned_to_username" in update_data:
+        username = update_data.pop("assigned_to_username")
+        if username:
+            user = db.query(User).filter(User.username == username).first()
+            if not user:
+                raise api_error(
+                    status_code=404,
+                    code="ASSIGNED_USER_NOT_FOUND",
+                    message="Assigned user not found",
+                )
+            update_data["assigned_to"] = user.id
+
+    if "assigned_to" in update_data and update_data["assigned_to"] is not None:
+        user = db.query(User).filter(User.id == update_data["assigned_to"]).first()
+        if not user:
+            raise api_error(
+                status_code=404,
+                code="ASSIGNED_USER_NOT_FOUND",
+                message="Assigned user not found",
+            )
+
+
+def _validate_sub_task_update_constraints(db: Session, sub_task: SubTask, update_data: dict):
+    old_task_id = sub_task.task_id
+    new_task_id = update_data.get("task_id", old_task_id)
+    new_priority = update_data.get("priority", sub_task.priority)
+
+    validate_task(db, new_task_id)
+
+    old_task_projected_total = get_task_priority_total(db, old_task_id) - sub_task.priority
+    old_task_remaining_count = (
+        db.query(func.count(SubTask.id)).filter(SubTask.task_id == old_task_id).scalar() or 0
+    ) - 1
+
+    if new_task_id == old_task_id:
+        old_task_projected_total += new_priority
+        validate_priority_total(old_task_projected_total)
+    else:
+        if old_task_remaining_count > 0:
+            validate_priority_total(old_task_projected_total)
+        new_task_projected_total = get_task_priority_total(db, new_task_id) + new_priority
+        validate_priority_total(new_task_projected_total)
+
+
+def _apply_sub_task_update(db: Session, sub_task: SubTask, update_data: dict):
+    old_status = sub_task.status
+    old_task_id = sub_task.task_id
+
+    for key, value in update_data.items():
+        setattr(sub_task, key, value)
+
+    if old_status != TaskStatus.complete.value and sub_task.status == TaskStatus.complete.value:
+        sub_task.completed_at = datetime.utcnow()
+        _auto_fill_actual_time_on_completion(sub_task)
+
+    recalculate_task_estimated_time(db, old_task_id)
+    sync_task_completion_status(db, old_task_id)
+    if sub_task.task_id != old_task_id:
+        recalculate_task_estimated_time(db, sub_task.task_id)
+        sync_task_completion_status(db, sub_task.task_id)
 
 
 @router.post("/subtasks", response_model=SubTaskResponse)
@@ -155,6 +286,13 @@ def create_sub_task(
     projected_total = get_task_priority_total(db, sub_task.task_id) + sub_task.priority
     validate_priority_total(projected_total)
 
+    assigned_user = resolve_assigned_user(
+        db=db,
+        assigned_to=sub_task.assigned_to,
+        assigned_to_username=sub_task.assigned_to_username,
+        current_user=current_user,
+    )
+
     new_sub_task = SubTask(
         title=sub_task.title,
         description=sub_task.description,
@@ -166,6 +304,7 @@ def create_sub_task(
         actual_hours=sub_task.actual_hours,
         task_id=sub_task.task_id,
         created_by=current_user.id,
+        assigned_to=assigned_user.id,
     )
 
     if new_sub_task.status == TaskStatus.complete.value:
@@ -208,7 +347,7 @@ def get_sub_tasks(
         pass
     else:
         query = query.join(Task, Task.id == SubTask.task_id).filter(
-            Task.assigned_to == current_user.id
+            or_(Task.created_by == current_user.id, SubTask.assigned_to == current_user.id)
         )
 
     if task_id is not None:
@@ -286,52 +425,54 @@ def update_sub_task(
     ensure_user_can_manage_task(existing_task, current_user)
 
     update_data = sub_task_update.dict(exclude_unset=True)
+    if not update_data:
+        raise api_error(
+            status_code=400,
+            code="EMPTY_UPDATE_PAYLOAD",
+            message="Provide at least one field to update",
+        )
 
-    if "status" in update_data and update_data["status"] is not None:
-        if (
-            sub_task.status == TaskStatus.complete.value
-            and update_data["status"].value != TaskStatus.complete.value
-        ):
+    _normalize_update_data(db, sub_task, update_data)
+    _validate_sub_task_update_constraints(db, sub_task, update_data)
+
+    if current_user.role != "admin":
+        pending_request = (
+            db.query(SubTaskUpdateRequest)
+            .filter(SubTaskUpdateRequest.sub_task_id == sub_task.id)
+            .filter(SubTaskUpdateRequest.requested_by == current_user.id)
+            .filter(SubTaskUpdateRequest.status == SubTaskUpdateRequestStatus.pending.value)
+            .first()
+        )
+
+        if pending_request:
             raise api_error(
-                status_code=400,
-                code="SUBTASK_ALREADY_COMPLETE",
-                message="A completed sub-task cannot be reopened",
+                status_code=409,
+                code="SUBTASK_UPDATE_REQUEST_ALREADY_PENDING",
+                message="You already have a pending update request for this sub-task",
             )
-        update_data["status"] = update_data["status"].value
 
-    old_status = sub_task.status
-    old_task_id = sub_task.task_id
-    new_task_id = update_data.get("task_id", old_task_id)
-    new_priority = update_data.get("priority", sub_task.priority)
+        request = SubTaskUpdateRequest(
+            sub_task_id=sub_task.id,
+            requested_by=current_user.id,
+            status=SubTaskUpdateRequestStatus.pending.value,
+            requested_changes=update_data,
+        )
+        db.add(request)
 
-    validate_task(db, new_task_id)
+        log_audit_event(
+            db=db,
+            action="CREATE",
+            entity_type="sub_task_update_request",
+            entity_id=sub_task.id,
+            user_id=current_user.id,
+            message="Sub-task update approval requested",
+            details={"requested_fields": list(update_data.keys())},
+        )
+        db.commit()
+        db.refresh(request)
+        return _serialize_sub_task(sub_task)
 
-    old_task_projected_total = get_task_priority_total(db, old_task_id) - sub_task.priority
-    old_task_remaining_count = (
-        db.query(func.count(SubTask.id)).filter(SubTask.task_id == old_task_id).scalar() or 0
-    ) - 1
-
-    if new_task_id == old_task_id:
-        old_task_projected_total += new_priority
-        validate_priority_total(old_task_projected_total)
-    else:
-        if old_task_remaining_count > 0:
-            validate_priority_total(old_task_projected_total)
-        new_task_projected_total = get_task_priority_total(db, new_task_id) + new_priority
-        validate_priority_total(new_task_projected_total)
-
-    for key, value in update_data.items():
-        setattr(sub_task, key, value)
-
-    if old_status != TaskStatus.complete.value and sub_task.status == TaskStatus.complete.value:
-        sub_task.completed_at = datetime.utcnow()
-        _auto_fill_actual_time_on_completion(sub_task)
-
-    recalculate_task_estimated_time(db, old_task_id)
-    sync_task_completion_status(db, old_task_id)
-    if sub_task.task_id != old_task_id:
-        recalculate_task_estimated_time(db, sub_task.task_id)
-        sync_task_completion_status(db, sub_task.task_id)
+    _apply_sub_task_update(db, sub_task, update_data)
 
     log_audit_event(
         db=db,
@@ -345,6 +486,158 @@ def update_sub_task(
     db.commit()
     db.refresh(sub_task)
     return _serialize_sub_task(sub_task)
+
+
+@router.get("/subtask-update-requests/my", response_model=SubTaskUpdateRequestListResponse)
+def get_my_sub_task_update_requests(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=10, ge=1, le=100),
+):
+    query = db.query(SubTaskUpdateRequest).filter(
+        SubTaskUpdateRequest.requested_by == current_user.id
+    )
+
+    total = query.count()
+    items = (
+        query.order_by(SubTaskUpdateRequest.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+
+    return {
+        "items": [_serialize_sub_task_update_request(item) for item in items],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": (total + page_size - 1) // page_size,
+    }
+
+
+@router.get("/subtask-update-requests", response_model=SubTaskUpdateRequestListResponse)
+def get_all_sub_task_update_requests(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("admin")),
+    status: str | None = Query(default=None),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=10, ge=1, le=100),
+):
+    query = db.query(SubTaskUpdateRequest)
+    if status:
+        query = query.filter(SubTaskUpdateRequest.status == status)
+
+    total = query.count()
+    items = (
+        query.order_by(SubTaskUpdateRequest.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+
+    return {
+        "items": [_serialize_sub_task_update_request(item) for item in items],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": (total + page_size - 1) // page_size,
+    }
+
+
+@router.put("/subtask-update-requests/{request_id}/approve", response_model=SubTaskUpdateRequestResponse)
+def approve_sub_task_update_request(
+    request_id: int,
+    payload: SubTaskUpdateRequestDecision,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("admin")),
+):
+    request = db.query(SubTaskUpdateRequest).filter(SubTaskUpdateRequest.id == request_id).first()
+    if not request:
+        raise api_error(
+            status_code=404,
+            code="SUBTASK_UPDATE_REQUEST_NOT_FOUND",
+            message="Sub-task update request not found",
+        )
+
+    if request.status != SubTaskUpdateRequestStatus.pending.value:
+        raise api_error(
+            status_code=400,
+            code="SUBTASK_UPDATE_REQUEST_ALREADY_REVIEWED",
+            message="Request is already reviewed",
+        )
+
+    sub_task = db.query(SubTask).filter(SubTask.id == request.sub_task_id).first()
+    if not sub_task:
+        raise api_error(
+            status_code=404,
+            code="SUBTASK_NOT_FOUND",
+            message="Sub task not found",
+        )
+
+    update_data = dict(request.requested_changes or {})
+    _normalize_update_data(db, sub_task, update_data)
+    _validate_sub_task_update_constraints(db, sub_task, update_data)
+    _apply_sub_task_update(db, sub_task, update_data)
+
+    request.status = SubTaskUpdateRequestStatus.approved.value
+    request.review_comment = payload.comment
+    request.reviewed_by = current_user.id
+    request.reviewed_at = datetime.utcnow()
+
+    log_audit_event(
+        db=db,
+        action="APPROVE",
+        entity_type="sub_task_update_request",
+        entity_id=request.id,
+        user_id=current_user.id,
+        message="Sub-task update request approved",
+        details={"sub_task_id": request.sub_task_id},
+    )
+    db.commit()
+    db.refresh(request)
+    return _serialize_sub_task_update_request(request)
+
+
+@router.put("/subtask-update-requests/{request_id}/reject", response_model=SubTaskUpdateRequestResponse)
+def reject_sub_task_update_request(
+    request_id: int,
+    payload: SubTaskUpdateRequestDecision,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("admin")),
+):
+    request = db.query(SubTaskUpdateRequest).filter(SubTaskUpdateRequest.id == request_id).first()
+    if not request:
+        raise api_error(
+            status_code=404,
+            code="SUBTASK_UPDATE_REQUEST_NOT_FOUND",
+            message="Sub-task update request not found",
+        )
+
+    if request.status != SubTaskUpdateRequestStatus.pending.value:
+        raise api_error(
+            status_code=400,
+            code="SUBTASK_UPDATE_REQUEST_ALREADY_REVIEWED",
+            message="Request is already reviewed",
+        )
+
+    request.status = SubTaskUpdateRequestStatus.rejected.value
+    request.review_comment = payload.comment
+    request.reviewed_by = current_user.id
+    request.reviewed_at = datetime.utcnow()
+
+    log_audit_event(
+        db=db,
+        action="REJECT",
+        entity_type="sub_task_update_request",
+        entity_id=request.id,
+        user_id=current_user.id,
+        message="Sub-task update request rejected",
+        details={"sub_task_id": request.sub_task_id},
+    )
+    db.commit()
+    db.refresh(request)
+    return _serialize_sub_task_update_request(request)
 
 
 @router.delete("/subtasks/{sub_task_id}")

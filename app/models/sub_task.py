@@ -29,6 +29,8 @@ class SubTask(Base):
 
     task_id = Column(Integer, ForeignKey("tasks.id"), nullable=False)
     created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
+    assigned_to = Column(Integer, ForeignKey("users.id"), nullable=True)
 
     task = relationship("Task", backref="sub_tasks")
     creator = relationship("User")
+    assignee = relationship("User", foreign_keys=[assigned_to])

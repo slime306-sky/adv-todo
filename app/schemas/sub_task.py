@@ -17,6 +17,8 @@ class SubTaskCreate(BaseModel):
     actual_days: Annotated[int, Field(ge=0)] = 0
     actual_hours: Annotated[int, Field(ge=0, lt=24)] = 0
     task_id: int
+    assigned_to: int | None = None
+    assigned_to_username: str | None = None
 
 
 class SubTaskUpdate(BaseModel):
@@ -29,6 +31,8 @@ class SubTaskUpdate(BaseModel):
     actual_days: Annotated[int, Field(ge=0)] | None = None
     actual_hours: Annotated[int, Field(ge=0, lt=24)] | None = None
     task_id: int | None = None
+    assigned_to: int | None = None
+    assigned_to_username: str | None = None
 
 
 class SubTaskResponse(BaseModel):
@@ -45,6 +49,7 @@ class SubTaskResponse(BaseModel):
     completed_at: datetime | None = None
     task_id: int
     created_by: UserReference
+    assigned_to: UserReference | None = None
 
     class Config:
         orm_mode = True
@@ -52,6 +57,30 @@ class SubTaskResponse(BaseModel):
 
 class SubTaskListResponse(BaseModel):
     items: list[SubTaskResponse]
+    total: int
+    page: int
+    page_size: int
+    total_pages: int
+
+
+class SubTaskUpdateRequestDecision(BaseModel):
+    comment: str | None = None
+
+
+class SubTaskUpdateRequestResponse(BaseModel):
+    id: int
+    sub_task_id: int
+    requested_by: UserReference
+    status: str
+    requested_changes: dict
+    review_comment: str | None = None
+    reviewed_by: UserReference | None = None
+    created_at: datetime
+    reviewed_at: datetime | None = None
+
+
+class SubTaskUpdateRequestListResponse(BaseModel):
+    items: list[SubTaskUpdateRequestResponse]
     total: int
     page: int
     page_size: int

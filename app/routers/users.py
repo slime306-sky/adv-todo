@@ -11,6 +11,7 @@ from app.core.security import get_db, hash_password, is_supported_password_hash,
 from app.models.activity import Activity
 from app.models.audit_log import AuditLog
 from app.models.sub_task import SubTask
+from app.models.task_update_request import TaskUpdateRequest
 from app.models.task import Task
 from app.models.user import User
 from app.schemas.user import PasswordRemediationResponse, PasswordRemediationUser, UserResponse, UserUpdate
@@ -24,6 +25,10 @@ def _serialize_user(user: User):
         "name": user.username,
         "email": user.email,
         "role": user.role,
+        "departments": [
+            {"id": department.id, "name": department.name}
+            for department in user.departments
+        ],
     }
 
 
@@ -174,12 +179,20 @@ def delete_user(
         {SubTask.created_by: current_user.id},
         synchronize_session=False,
     )
-    db.query(Task).filter(Task.created_by == user.id).update(
-        {Task.created_by: current_user.id},
+    db.query(SubTask).filter(SubTask.assigned_to == user.id).update(
+        {SubTask.assigned_to: current_user.id},
         synchronize_session=False,
     )
-    db.query(Task).filter(Task.assigned_to == user.id).update(
-        {Task.assigned_to: None},
+    db.query(TaskUpdateRequest).filter(TaskUpdateRequest.requested_by == user.id).update(
+        {TaskUpdateRequest.requested_by: current_user.id},
+        synchronize_session=False,
+    )
+    db.query(TaskUpdateRequest).filter(TaskUpdateRequest.reviewed_by == user.id).update(
+        {TaskUpdateRequest.reviewed_by: current_user.id},
+        synchronize_session=False,
+    )
+    db.query(Task).filter(Task.created_by == user.id).update(
+        {Task.created_by: current_user.id},
         synchronize_session=False,
     )
     db.query(Activity).filter(Activity.created_by == user.id).update(
@@ -190,6 +203,9 @@ def delete_user(
         {AuditLog.user_id: None},
         synchronize_session=False,
     )
+
+    # Clear many-to-many links to avoid FK conflicts on strict backends.
+    user.departments = []
 
     db.delete(user)
 

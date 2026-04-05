@@ -9,6 +9,7 @@ from app.models.activity import Activity
 from app.models.sub_task import SubTask
 from app.models.task import Task
 from app.models.user import User
+from app.routers.sub_tasks import ensure_user_can_manage_task
 from app.schemas.activity import (
     ActivityCreate,
     ActivityListResponse,
@@ -162,7 +163,6 @@ def delete_activity(
     )
     db.delete(activity)
     db.commit()
-    db.refresh(activity)
     return {"message": "Activity deleted successfully"}
 
 
@@ -181,12 +181,7 @@ def get_task_activities(
     if not task:
         raise api_error(status_code=404, code="TASK_NOT_FOUND", message="Task not found")
 
-    if task.assigned_to != user.id and user.role != "admin":
-        raise api_error(
-            status_code=403,
-            code="FORBIDDEN_TASK_ACCESS",
-            message="Not authorized",
-        )
+    ensure_user_can_manage_task(task, user)
 
     query = (
         db.query(Activity)

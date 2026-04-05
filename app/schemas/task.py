@@ -1,5 +1,5 @@
 ﻿from datetime import datetime
-from typing import Annotated,Optional
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, root_validator
 
@@ -18,15 +18,13 @@ class TaskSubTaskCreate(BaseModel):
     estimated_hours: Annotated[int, Field(ge=0, lt=24)] = 0
     actual_days: Annotated[int, Field(ge=0)] = 0
     actual_hours: Annotated[int, Field(ge=0, lt=24)] = 0
+    assigned_to: int | None = None
+    assigned_to_username: str | None = None
 
 
 class TaskCreate(BaseModel):
     title: str
     description: str
-    start_date: datetime
-    end_date: datetime
-    assigned_to: int | None = None
-    assigned_to_username: str | None = None
     sub_tasks: list[TaskSubTaskCreate] | None = None
     sub_task_count: Annotated[int, Field(ge=0)] | None = None
 
@@ -48,14 +46,11 @@ class TaskResponse(BaseModel):
     id: int
     title: str
     description: str
-    start_date: datetime
-    end_date: datetime
     status: TaskStatus
     estimated_days: int
     estimated_hours: int
     created_by: UserReference
-    assigned_to: Optional[UserReference]
-    version: int
+    version: str
     parent_task_id: int | None = None
 
     class Config:
@@ -75,13 +70,10 @@ class TaskAdminResponse(BaseModel):
     id: int
     title: str
     description: str
-    start_date: datetime
-    end_date: datetime
     status: TaskStatus
     estimated_days: int
     estimated_hours: int
     created_by: UserReference
-    assigned_to: UserReference
 
     class Config:
         orm_mode = True
@@ -156,8 +148,32 @@ class TaskPriorityBulkUpdateResponse(BaseModel):
 class TaskUpdate(BaseModel):
     title: str | None = None
     description: str | None = None
-    start_date: datetime | None = None
-    end_date: datetime | None = None
     status: TaskStatus | None = None
-    assigned_to: int | None = None
-    assigned_to_username: str | None = None
+
+
+class TaskVersionBumpRequest(BaseModel):
+    bump_type: Literal["major", "minor", "patch"] = "patch"
+
+
+class TaskUpdateRequestDecision(BaseModel):
+    comment: str | None = None
+
+
+class TaskUpdateRequestResponse(BaseModel):
+    id: int
+    task_id: int
+    requested_by: UserReference
+    status: str
+    requested_changes: dict
+    review_comment: str | None = None
+    reviewed_by: UserReference | None = None
+    created_at: datetime
+    reviewed_at: datetime | None = None
+
+
+class TaskUpdateRequestListResponse(BaseModel):
+    items: list[TaskUpdateRequestResponse]
+    total: int
+    page: int
+    page_size: int
+    total_pages: int

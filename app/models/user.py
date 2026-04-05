@@ -1,6 +1,8 @@
 ﻿from sqlalchemy import CheckConstraint, Column, Integer, String
+from sqlalchemy.orm import relationship
 
 from app.core.database import Base
+from app.models.department import user_departments
 
 
 class User(Base):
@@ -12,3 +14,8 @@ class User(Base):
     email = Column(String, unique=True, index=True)
     password = Column(String, nullable=False)
     role = Column(String, default="user")
+    departments = relationship(
+        "Department",
+        secondary=user_departments,
+        back_populates="users",
+    )

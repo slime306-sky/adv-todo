@@ -1,10 +1,9 @@
-from datetime import datetime
-
 from fastapi import APIRouter, Depends
-from sqlalchemy import and_
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.core.security import get_current_user, get_db
+from app.models.sub_task import SubTask
 from app.models.task import Task, TaskStatus
 from app.models.user import User
 from app.schemas.dashboard import DashboardResponse
@@ -27,8 +26,7 @@ def _serialize_recent_task(task: Task):
         "id": task.id,
         "title": task.title,
         "status": task.status,
-        "end_date": task.end_date,
-        "assigned_to": _serialize_user_reference(task.assignee, task.assigned_to),
+        "created_by": _serialize_user_reference(task.creator, task.created_by),
     }
 
 
@@ -39,17 +37,17 @@ def get_dashboard(
 ):
     query = db.query(Task)
     if current_user.role != "admin":
-        query = query.filter(Task.assigned_to == current_user.id)
+        query = query.filter(
+            or_(
+                Task.created_by == current_user.id,
+                Task.id.in_(db.query(SubTask.task_id).filter(SubTask.assigned_to == current_user.id)),
+            )
+        )
 
     total_tasks = query.count()
     completed_tasks = query.filter(Task.status == TaskStatus.complete.value).count()
     in_progress_tasks = query.filter(Task.status == TaskStatus.in_progress.value).count()
-    overdue_tasks = query.filter(
-        and_(
-            Task.end_date < datetime.utcnow(),
-            Task.status != TaskStatus.complete.value,
-        )
-    ).count()
+    pending_tasks = query.filter(Task.status == TaskStatus.not_complete.value).count()
 
     recent_tasks = query.order_by(Task.id.desc()).limit(3).all()
 
@@ -57,6 +55,6 @@ def get_dashboard(
         "total_tasks": total_tasks,
         "completed_tasks": completed_tasks,
         "in_progress_tasks": in_progress_tasks,
-        "overdue_tasks": overdue_tasks,
+        "pending_tasks": pending_tasks,
         "recent_tasks": [_serialize_recent_task(task) for task in recent_tasks],
     }

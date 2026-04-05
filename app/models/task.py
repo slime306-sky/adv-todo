@@ -1,7 +1,6 @@
-﻿from datetime import datetime
-import enum
+﻿import enum
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String
+from sqlalchemy import Column, ForeignKey, Integer, String
 from sqlalchemy.orm import relationship
 
 from app.core.database import Base
@@ -20,18 +19,20 @@ class Task(Base):
     id = Column(Integer, primary_key=True, index=True)
     title = Column(String, nullable=False)
     description = Column(String)
-    start_date = Column(DateTime, default=datetime.utcnow)
-    end_date = Column(DateTime)
     status = Column(String, default=TaskStatus.not_complete.value)
     estimated_days = Column(Integer, default=0)
     estimated_hours = Column(Integer, default=0)
 
-    version = Column(Integer, default=1, nullable=False)
+    version_major = Column(Integer, default=1, nullable=False)
+    version_minor = Column(Integer, default=0, nullable=False)
+    version_patch = Column(Integer, default=0, nullable=False)
     parent_task_id = Column(Integer, ForeignKey("tasks.id"), nullable=True)
 
     created_by = Column(Integer, ForeignKey("users.id"))
-    assigned_to = Column(Integer, ForeignKey("users.id"))
 
     creator = relationship("User", foreign_keys=[created_by])
-    assignee = relationship("User", foreign_keys=[assigned_to])
     parent_task = relationship("Task", foreign_keys=[parent_task_id], remote_side="Task.id")
+
+    @property
+    def version(self) -> str:
+        return f"{self.version_major}.{self.version_minor}.{self.version_patch}"

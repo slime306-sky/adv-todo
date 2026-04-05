@@ -1,0 +1,1793 @@
+openapi: 3.0.3
+info:
+  title: To-Do Backend API
+  version: 1.0.0
+  description: |
+    Formal OpenAPI-style contract for the FastAPI to-do backend.
+    This document reflects the currently implemented routes and payload shapes.
+servers:
+  - url: /
+security:
+  - bearerAuth: []
+tags:
+  - name: auth
+  - name: users
+  - name: departments
+  - name: tasks
+  - name: sub-tasks
+  - name: activities
+  - name: dashboard
+  - name: audit-logs
+paths:
+  /login:
+    post:
+      tags: [auth]
+      summary: Login
+      operationId: login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserLogin'
+      responses:
+        '200':
+          description: Logged in successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Token'
+        '401':
+          $ref: '#/components/responses/Error401'
+
+  /register:
+    post:
+      tags: [auth]
+      summary: Register user (admin only)
+      operationId: register
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserCreate'
+      responses:
+        '200':
+          description: User created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '403':
+          $ref: '#/components/responses/Error403'
+
+  /change-password:
+    post:
+      tags: [auth]
+      summary: Change current user's password
+      operationId: changePassword
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordChangeRequest'
+      responses:
+        '200':
+          description: Password changed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '401':
+          $ref: '#/components/responses/Error401'
+
+  /users:
+    get:
+      tags: [users]
+      summary: List users (admin only)
+      operationId: getUsers
+      responses:
+        '200':
+          description: List of users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/UserResponse'
+        '403':
+          $ref: '#/components/responses/Error403'
+
+  /users/{user_id}:
+    put:
+      tags: [users]
+      summary: Update user (admin only)
+      operationId: updateUser
+      parameters:
+        - $ref: '#/components/parameters/UserIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserUpdate'
+      responses:
+        '200':
+          description: Updated user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '404':
+          $ref: '#/components/responses/Error404'
+    delete:
+      tags: [users]
+      summary: Delete user (admin only)
+      operationId: deleteUser
+      parameters:
+        - $ref: '#/components/parameters/UserIdPath'
+      responses:
+        '200':
+          description: User deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+
+  /users/remediate-passwords:
+    post:
+      tags: [users]
+      summary: Remediate invalid password hashes (admin only)
+      operationId: remediatePasswords
+      parameters:
+        - in: query
+          name: dry_run
+          required: false
+          schema:
+            type: boolean
+            default: true
+        - in: query
+          name: limit
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 100
+      responses:
+        '200':
+          description: Remediation result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PasswordRemediationResponse'
+
+  /departments:
+    post:
+      tags: [departments]
+      summary: Create department (admin only)
+      operationId: createDepartment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DepartmentCreate'
+      responses:
+        '200':
+          description: Department created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DepartmentResponse'
+        '409':
+          $ref: '#/components/responses/Error409'
+    get:
+      tags: [departments]
+      summary: List departments
+      operationId: listDepartments
+      responses:
+        '200':
+          description: Departments list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/DepartmentResponse'
+
+  /users/{user_id}/departments:
+    put:
+      tags: [departments]
+      summary: Assign user departments (admin only)
+      operationId: assignUserDepartments
+      parameters:
+        - $ref: '#/components/parameters/UserIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserDepartmentAssignRequest'
+      responses:
+        '200':
+          description: Department assignment updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserDepartmentAssignResponse'
+
+  /tasks:
+    post:
+      tags: [tasks]
+      summary: Create task
+      operationId: createTask
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskCreate'
+      responses:
+        '200':
+          description: Task created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskCreateResponse'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '404':
+          $ref: '#/components/responses/Error404'
+    get:
+      tags: [tasks]
+      summary: List tasks (admin only)
+      operationId: listTasksAdmin
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Search'
+        - in: query
+          name: status
+          schema:
+            $ref: '#/components/schemas/TaskStatus'
+      responses:
+        '200':
+          description: Task list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskAdminListResponse'
+
+  /my-tasks:
+    get:
+      tags: [tasks]
+      summary: List my tasks
+      operationId: listMyTasks
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Search'
+        - in: query
+          name: status
+          schema:
+            $ref: '#/components/schemas/TaskStatus'
+      responses:
+        '200':
+          description: My tasks
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskListResponse'
+
+  /tasks/{task_id}:
+    get:
+      tags: [tasks]
+      summary: Get task by id
+      operationId: getTaskById
+      parameters:
+        - $ref: '#/components/parameters/TaskIdPath'
+      responses:
+        '200':
+          description: Task with sub-tasks
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskWithSubTasksResponse'
+        '404':
+          $ref: '#/components/responses/Error404'
+    put:
+      tags: [tasks]
+      summary: Update task or request approval
+      operationId: updateTask
+      parameters:
+        - $ref: '#/components/parameters/TaskIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskUpdate'
+      responses:
+        '200':
+          description: Task updated or approval request created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskResponse'
+    delete:
+      tags: [tasks]
+      summary: Delete task (admin only)
+      operationId: deleteTask
+      parameters:
+        - $ref: '#/components/parameters/TaskIdPath'
+      responses:
+        '200':
+          description: Task deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+
+  /tasks/{task_id}/complete:
+    put:
+      tags: [tasks]
+      summary: Complete task assigned to current user
+      operationId: completeTask
+      parameters:
+        - $ref: '#/components/parameters/TaskIdPath'
+      responses:
+        '200':
+          description: Task marked complete
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+
+  /task-update-requests/my:
+    get:
+      tags: [tasks]
+      summary: List my task update requests
+      operationId: listMyTaskUpdateRequests
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Task update requests
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskUpdateRequestListResponse'
+
+  /task-update-requests:
+    get:
+      tags: [tasks]
+      summary: List all task update requests (admin only)
+      operationId: listAllTaskUpdateRequests
+      parameters:
+        - in: query
+          name: status
+          schema:
+            $ref: '#/components/schemas/TaskUpdateRequestStatus'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Task update requests
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskUpdateRequestListResponse'
+
+  /task-update-requests/{request_id}/approve:
+    put:
+      tags: [tasks]
+      summary: Approve task update request (admin only)
+      operationId: approveTaskUpdateRequest
+      parameters:
+        - $ref: '#/components/parameters/RequestIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskUpdateRequestDecision'
+      responses:
+        '200':
+          description: Approved task update request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskUpdateRequestResponse'
+
+  /task-update-requests/{request_id}/reject:
+    put:
+      tags: [tasks]
+      summary: Reject task update request (admin only)
+      operationId: rejectTaskUpdateRequest
+      parameters:
+        - $ref: '#/components/parameters/RequestIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskUpdateRequestDecision'
+      responses:
+        '200':
+          description: Rejected task update request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskUpdateRequestResponse'
+
+  /tasks/{task_id}/progress:
+    get:
+      tags: [tasks]
+      summary: Task progress metrics
+      operationId: getTaskProgress
+      parameters:
+        - $ref: '#/components/parameters/TaskIdPath'
+      responses:
+        '200':
+          description: Progress details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskProgressResponse'
+
+  /tasks/{task_id}/timeline:
+    get:
+      tags: [tasks]
+      summary: Task timeline and bars
+      operationId: getTaskTimeline
+      parameters:
+        - $ref: '#/components/parameters/TaskIdPath'
+      responses:
+        '200':
+          description: Timeline details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskTimelineResponse'
+
+  /tasks/{task_id}/subtasks/priorities:
+    put:
+      tags: [tasks]
+      summary: Bulk update sub-task priorities
+      operationId: updateSubTaskPriorities
+      parameters:
+        - $ref: '#/components/parameters/TaskIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskPriorityBulkUpdateRequest'
+      responses:
+        '200':
+          description: Priorities updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskPriorityBulkUpdateResponse'
+    post:
+      tags: [tasks]
+      summary: Bulk update sub-task priorities (alias)
+      operationId: updateSubTaskPrioritiesAlias
+      parameters:
+        - $ref: '#/components/parameters/TaskIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskPriorityBulkUpdateRequest'
+      responses:
+        '200':
+          description: Priorities updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskPriorityBulkUpdateResponse'
+
+  /tasks/{task_id}/revise:
+    post:
+      tags: [tasks]
+      summary: Create revised task version (admin only)
+      operationId: reviseTask
+      parameters:
+        - $ref: '#/components/parameters/TaskIdPath'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskVersionBumpRequest'
+      responses:
+        '200':
+          description: Revised task created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskResponse'
+
+  /subtasks:
+    post:
+      tags: [sub-tasks]
+      summary: Create sub-task
+      operationId: createSubTask
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubTaskCreate'
+      responses:
+        '200':
+          description: Sub-task created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubTaskResponse'
+    get:
+      tags: [sub-tasks]
+      summary: List sub-tasks
+      operationId: listSubTasks
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Search'
+        - in: query
+          name: status
+          schema:
+            $ref: '#/components/schemas/SubTaskStatus'
+        - in: query
+          name: task_id
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Sub-task list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubTaskListResponse'
+
+  /subtasks/{sub_task_id}:
+    get:
+      tags: [sub-tasks]
+      summary: Get sub-task by id
+      operationId: getSubTaskById
+      parameters:
+        - $ref: '#/components/parameters/SubTaskIdPath'
+      responses:
+        '200':
+          description: Sub-task details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubTaskResponse'
+    put:
+      tags: [sub-tasks]
+      summary: Update sub-task or create approval request
+      operationId: updateSubTask
+      parameters:
+        - $ref: '#/components/parameters/SubTaskIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubTaskUpdate'
+      responses:
+        '200':
+          description: Sub-task response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubTaskResponse'
+    delete:
+      tags: [sub-tasks]
+      summary: Delete sub-task
+      operationId: deleteSubTask
+      parameters:
+        - $ref: '#/components/parameters/SubTaskIdPath'
+      responses:
+        '200':
+          description: Sub-task deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+
+  /subtask-update-requests/my:
+    get:
+      tags: [sub-tasks]
+      summary: List my sub-task update requests
+      operationId: listMySubTaskUpdateRequests
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Request list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubTaskUpdateRequestListResponse'
+
+  /subtask-update-requests:
+    get:
+      tags: [sub-tasks]
+      summary: List all sub-task update requests (admin only)
+      operationId: listAllSubTaskUpdateRequests
+      parameters:
+        - in: query
+          name: status
+          schema:
+            $ref: '#/components/schemas/SubTaskUpdateRequestStatus'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Request list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubTaskUpdateRequestListResponse'
+
+  /subtask-update-requests/{request_id}/approve:
+    put:
+      tags: [sub-tasks]
+      summary: Approve sub-task update request (admin only)
+      operationId: approveSubTaskUpdateRequest
+      parameters:
+        - $ref: '#/components/parameters/RequestIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubTaskUpdateRequestDecision'
+      responses:
+        '200':
+          description: Approved request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubTaskUpdateRequestResponse'
+
+  /subtask-update-requests/{request_id}/reject:
+    put:
+      tags: [sub-tasks]
+      summary: Reject sub-task update request (admin only)
+      operationId: rejectSubTaskUpdateRequest
+      parameters:
+        - $ref: '#/components/parameters/RequestIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubTaskUpdateRequestDecision'
+      responses:
+        '200':
+          description: Rejected request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubTaskUpdateRequestResponse'
+
+  /activities:
+    post:
+      tags: [activities]
+      summary: Create activity (admin only)
+      operationId: createActivity
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActivityCreate'
+      responses:
+        '200':
+          description: Activity created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActivityResponse'
+
+  /activities/{activity_id}:
+    put:
+      tags: [activities]
+      summary: Update activity (admin only)
+      operationId: updateActivity
+      parameters:
+        - $ref: '#/components/parameters/ActivityIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActivityUpdate'
+      responses:
+        '200':
+          description: Activity updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActivityResponse'
+    delete:
+      tags: [activities]
+      summary: Delete activity (admin only)
+      operationId: deleteActivity
+      parameters:
+        - $ref: '#/components/parameters/ActivityIdPath'
+      responses:
+        '200':
+          description: Activity deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+
+  /tasks/{task_id}/activities:
+    get:
+      tags: [activities]
+      summary: List task activities
+      operationId: listTaskActivities
+      parameters:
+        - $ref: '#/components/parameters/TaskIdPath'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Search'
+        - in: query
+          name: status
+          schema:
+            $ref: '#/components/schemas/ActivityStatus'
+        - in: query
+          name: sub_task_id
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Activity list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActivityListResponse'
+
+  /dashboard:
+    get:
+      tags: [dashboard]
+      summary: Get dashboard summary
+      operationId: getDashboard
+      responses:
+        '200':
+          description: Dashboard payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardResponse'
+
+  /audit-logs:
+    get:
+      tags: [audit-logs]
+      summary: List audit logs
+      operationId: listAuditLogs
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - in: query
+          name: page_size
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - in: query
+          name: action
+          schema:
+            type: string
+        - in: query
+          name: entity_type
+          schema:
+            type: string
+        - in: query
+          name: entity_id
+          schema:
+            type: integer
+        - in: query
+          name: user_id
+          schema:
+            type: integer
+        - $ref: '#/components/parameters/Search'
+        - in: query
+          name: start_date
+          schema:
+            type: string
+            format: date-time
+        - in: query
+          name: end_date
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: Audit log list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditLogListResponse'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    Page:
+      in: query
+      name: page
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    PageSize:
+      in: query
+      name: page_size
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 10
+    Search:
+      in: query
+      name: search
+      required: false
+      schema:
+        type: string
+    UserIdPath:
+      in: path
+      name: user_id
+      required: true
+      schema:
+        type: integer
+    TaskIdPath:
+      in: path
+      name: task_id
+      required: true
+      schema:
+        type: integer
+    SubTaskIdPath:
+      in: path
+      name: sub_task_id
+      required: true
+      schema:
+        type: integer
+    ActivityIdPath:
+      in: path
+      name: activity_id
+      required: true
+      schema:
+        type: integer
+    RequestIdPath:
+      in: path
+      name: request_id
+      required: true
+      schema:
+        type: integer
+
+  responses:
+    Error400:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Error401:
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Error403:
+      description: Forbidden
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Error404:
+      description: Not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Error409:
+      description: Conflict
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+  schemas:
+    MessageResponse:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+
+    ErrorResponse:
+      type: object
+      required: [message, code, dev_message, request_id, path]
+      properties:
+        message:
+          type: string
+        code:
+          type: string
+        dev_message:
+          type: string
+        request_id:
+          type: string
+        path:
+          type: string
+        details:
+          type: array
+          items: {}
+
+    TaskStatus:
+      type: string
+      enum: [complete, not complete, in progress, blocked]
+
+    SubTaskStatus:
+      type: string
+      enum: [complete, not complete]
+
+    SubTaskUpdateRequestStatus:
+      type: string
+      enum: [pending, approved, rejected]
+
+    ActivityStatus:
+      type: string
+      enum: [complete, not complete]
+
+    UserReference:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+
+    DepartmentReference:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+
+    UserCreate:
+      type: object
+      required: [username, email, password]
+      properties:
+        username:
+          type: string
+        email:
+          type: string
+        password:
+          type: string
+        role:
+          type: string
+          default: user
+
+    UserLogin:
+      type: object
+      required: [username, password]
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+
+    PasswordChangeRequest:
+      type: object
+      required: [new_password]
+      properties:
+        current_password:
+          type: string
+          nullable: true
+        new_password:
+          type: string
+
+    Token:
+      type: object
+      required: [access_token, token_type, username, role, user]
+      properties:
+        access_token:
+          type: string
+        token_type:
+          type: string
+        username:
+          type: string
+        role:
+          type: string
+        user:
+          $ref: '#/components/schemas/UserReference'
+
+    UserResponse:
+      type: object
+      required: [id, name, email, role, departments]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        email:
+          type: string
+        role:
+          type: string
+        departments:
+          type: array
+          items:
+            $ref: '#/components/schemas/DepartmentReference'
+
+    UserUpdate:
+      type: object
+      properties:
+        username:
+          type: string
+        email:
+          type: string
+        role:
+          type: string
+
+    PasswordRemediationUser:
+      type: object
+      required: [user_id, username, temporary_password]
+      properties:
+        user_id:
+          type: integer
+        username:
+          type: string
+        email:
+          type: string
+          nullable: true
+        temporary_password:
+          type: string
+
+    PasswordRemediationResponse:
+      type: object
+      required: [processed_users, affected_users]
+      properties:
+        processed_users:
+          type: integer
+        affected_users:
+          type: array
+          items:
+            $ref: '#/components/schemas/PasswordRemediationUser'
+
+    DepartmentCreate:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+
+    DepartmentResponse:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+
+    UserDepartmentAssignRequest:
+      type: object
+      required: [department_ids]
+      properties:
+        department_ids:
+          type: array
+          items:
+            type: integer
+
+    UserDepartmentAssignResponse:
+      type: object
+      required: [message, department_ids]
+      properties:
+        message:
+          type: string
+        department_ids:
+          type: array
+          items:
+            type: integer
+
+    TaskSubTaskCreate:
+      type: object
+      required: [title, description]
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        status:
+          $ref: '#/components/schemas/SubTaskStatus'
+        priority:
+          type: integer
+          minimum: 0
+          maximum: 100
+          default: 0
+        estimated_days:
+          type: integer
+          minimum: 0
+          default: 0
+        estimated_hours:
+          type: integer
+          minimum: 0
+          maximum: 23
+          default: 0
+        actual_days:
+          type: integer
+          minimum: 0
+          default: 0
+        actual_hours:
+          type: integer
+          minimum: 0
+          maximum: 23
+          default: 0
+        assigned_to:
+          type: integer
+          nullable: true
+        assigned_to_username:
+          type: string
+          nullable: true
+
+    TaskCreate:
+      type: object
+      required: [title, description]
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        sub_tasks:
+          type: array
+          nullable: true
+          items:
+            $ref: '#/components/schemas/TaskSubTaskCreate'
+        sub_task_count:
+          type: integer
+          minimum: 0
+          nullable: true
+
+    TaskUpdate:
+      type: object
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        status:
+          $ref: '#/components/schemas/TaskStatus'
+
+    TaskResponse:
+      type: object
+      required: [id, title, description, status, estimated_days, estimated_hours, created_by, version]
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        description:
+          type: string
+        status:
+          $ref: '#/components/schemas/TaskStatus'
+        estimated_days:
+          type: integer
+        estimated_hours:
+          type: integer
+        created_by:
+          $ref: '#/components/schemas/UserReference'
+        version:
+          type: string
+        parent_task_id:
+          type: integer
+          nullable: true
+
+    TaskWithSubTasksResponse:
+      allOf:
+        - $ref: '#/components/schemas/TaskResponse'
+        - type: object
+          properties:
+            sub_tasks:
+              type: array
+              items:
+                $ref: '#/components/schemas/SubTaskResponse'
+
+    TaskCreateResponse:
+      allOf:
+        - $ref: '#/components/schemas/TaskWithSubTasksResponse'
+        - type: object
+          properties:
+            sub_tasks_created_count:
+              type: integer
+
+    TaskAdminResponse:
+      type: object
+      required: [id, title, description, status, estimated_days, estimated_hours, created_by]
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        description:
+          type: string
+        status:
+          $ref: '#/components/schemas/TaskStatus'
+        estimated_days:
+          type: integer
+        estimated_hours:
+          type: integer
+        created_by:
+          $ref: '#/components/schemas/UserReference'
+
+    TaskListResponse:
+      type: object
+      required: [items, total, page, page_size, total_pages]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/TaskWithSubTasksResponse'
+        total:
+          type: integer
+        page:
+          type: integer
+        page_size:
+          type: integer
+        total_pages:
+          type: integer
+
+    TaskAdminListResponse:
+      type: object
+      required: [items, total, page, page_size, total_pages]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/TaskAdminResponse'
+        total:
+          type: integer
+        page:
+          type: integer
+        page_size:
+          type: integer
+        total_pages:
+          type: integer
+
+    TaskProgressResponse:
+      type: object
+      required: [task_id, total_subtasks, completed_subtasks, progress_percentage, is_completed]
+      properties:
+        task_id:
+          type: integer
+        total_subtasks:
+          type: integer
+        completed_subtasks:
+          type: integer
+        progress_percentage:
+          type: number
+          format: float
+        is_completed:
+          type: boolean
+
+    TimelineBar:
+      type: object
+      required: [key, label, hours, percentage]
+      properties:
+        key:
+          type: string
+        label:
+          type: string
+        hours:
+          type: number
+          format: float
+        percentage:
+          type: number
+          format: float
+
+    SubTaskTimelineItem:
+      type: object
+      required: [sub_task_id, title, status, priority, estimated_hours, actual_hours, expected_hours]
+      properties:
+        sub_task_id:
+          type: integer
+        title:
+          type: string
+        status:
+          type: string
+        priority:
+          type: integer
+        estimated_hours:
+          type: number
+          format: float
+        actual_hours:
+          type: number
+          format: float
+        expected_hours:
+          type: number
+          format: float
+
+    TaskTimelineResponse:
+      type: object
+      required: [task_id, task_title, total_estimated_hours, total_actual_hours, total_expected_hours, bars, sub_tasks]
+      properties:
+        task_id:
+          type: integer
+        task_title:
+          type: string
+        total_estimated_hours:
+          type: number
+          format: float
+        total_actual_hours:
+          type: number
+          format: float
+        total_expected_hours:
+          type: number
+          format: float
+        bars:
+          type: array
+          items:
+            $ref: '#/components/schemas/TimelineBar'
+        sub_tasks:
+          type: array
+          items:
+            $ref: '#/components/schemas/SubTaskTimelineItem'
+
+    SubTaskPriorityItem:
+      type: object
+      required: [sub_task_id, priority]
+      properties:
+        sub_task_id:
+          type: integer
+        priority:
+          type: integer
+          minimum: 0
+          maximum: 100
+
+    TaskPriorityBulkUpdateRequest:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/SubTaskPriorityItem'
+
+    TaskPriorityBulkUpdateResponse:
+      type: object
+      required: [task_id, total_priority, items]
+      properties:
+        task_id:
+          type: integer
+        total_priority:
+          type: integer
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/SubTaskPriorityItem'
+
+    TaskVersionBumpRequest:
+      type: object
+      properties:
+        bump_type:
+          type: string
+          enum: [major, minor, patch]
+          default: patch
+
+    TaskUpdateRequestStatus:
+      type: string
+      enum: [pending, approved, rejected]
+
+    TaskUpdateRequestDecision:
+      type: object
+      properties:
+        comment:
+          type: string
+          nullable: true
+
+    TaskUpdateRequestResponse:
+      type: object
+      required: [id, task_id, requested_by, status, requested_changes, created_at]
+      properties:
+        id:
+          type: integer
+        task_id:
+          type: integer
+        requested_by:
+          $ref: '#/components/schemas/UserReference'
+        status:
+          $ref: '#/components/schemas/TaskUpdateRequestStatus'
+        requested_changes:
+          type: object
+          additionalProperties: true
+        review_comment:
+          type: string
+          nullable: true
+        reviewed_by:
+          allOf:
+            - $ref: '#/components/schemas/UserReference'
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        reviewed_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    TaskUpdateRequestListResponse:
+      type: object
+      required: [items, total, page, page_size, total_pages]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/TaskUpdateRequestResponse'
+        total:
+          type: integer
+        page:
+          type: integer
+        page_size:
+          type: integer
+        total_pages:
+          type: integer
+
+    SubTaskCreate:
+      type: object
+      required: [title, description, task_id]
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        status:
+          $ref: '#/components/schemas/SubTaskStatus'
+        priority:
+          type: integer
+          minimum: 0
+          maximum: 100
+          default: 0
+        estimated_days:
+          type: integer
+          minimum: 0
+          default: 0
+        estimated_hours:
+          type: integer
+          minimum: 0
+          maximum: 23
+          default: 0
+        actual_days:
+          type: integer
+          minimum: 0
+          default: 0
+        actual_hours:
+          type: integer
+          minimum: 0
+          maximum: 23
+          default: 0
+        task_id:
+          type: integer
+        assigned_to:
+          type: integer
+          nullable: true
+        assigned_to_username:
+          type: string
+          nullable: true
+
+    SubTaskUpdate:
+      type: object
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        status:
+          $ref: '#/components/schemas/SubTaskStatus'
+        priority:
+          type: integer
+          minimum: 0
+          maximum: 100
+        estimated_days:
+          type: integer
+          minimum: 0
+        estimated_hours:
+          type: integer
+          minimum: 0
+          maximum: 23
+        actual_days:
+          type: integer
+          minimum: 0
+        actual_hours:
+          type: integer
+          minimum: 0
+          maximum: 23
+        task_id:
+          type: integer
+        assigned_to:
+          type: integer
+          nullable: true
+        assigned_to_username:
+          type: string
+          nullable: true
+
+    SubTaskResponse:
+      type: object
+      required: [id, title, description, status, priority, estimated_days, estimated_hours, actual_days, actual_hours, created_at, task_id, created_by]
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        description:
+          type: string
+        status:
+          type: string
+        priority:
+          type: integer
+        estimated_days:
+          type: integer
+        estimated_hours:
+          type: integer
+        actual_days:
+          type: integer
+        actual_hours:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        task_id:
+          type: integer
+        created_by:
+          $ref: '#/components/schemas/UserReference'
+        assigned_to:
+          allOf:
+            - $ref: '#/components/schemas/UserReference'
+          nullable: true
+
+    SubTaskListResponse:
+      type: object
+      required: [items, total, page, page_size, total_pages]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/SubTaskResponse'
+        total:
+          type: integer
+        page:
+          type: integer
+        page_size:
+          type: integer
+        total_pages:
+          type: integer
+
+    SubTaskUpdateRequestDecision:
+      type: object
+      properties:
+        comment:
+          type: string
+          nullable: true
+
+    SubTaskUpdateRequestResponse:
+      type: object
+      required: [id, sub_task_id, requested_by, status, requested_changes, created_at]
+      properties:
+        id:
+          type: integer
+        sub_task_id:
+          type: integer
+        requested_by:
+          $ref: '#/components/schemas/UserReference'
+        status:
+          $ref: '#/components/schemas/SubTaskUpdateRequestStatus'
+        requested_changes:
+          type: object
+          additionalProperties: true
+        review_comment:
+          type: string
+          nullable: true
+        reviewed_by:
+          allOf:
+            - $ref: '#/components/schemas/UserReference'
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        reviewed_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    SubTaskUpdateRequestListResponse:
+      type: object
+      required: [items, total, page, page_size, total_pages]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/SubTaskUpdateRequestResponse'
+        total:
+          type: integer
+        page:
+          type: integer
+        page_size:
+          type: integer
+        total_pages:
+          type: integer
+
+    ActivityCreate:
+      type: object
+      required: [title, description, date, sub_task_id]
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        date:
+          type: string
+          format: date
+        sub_task_id:
+          type: integer
+
+    ActivityUpdate:
+      type: object
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        date:
+          type: string
+          format: date
+        status:
+          $ref: '#/components/schemas/ActivityStatus'
+        sub_task_id:
+          type: integer
+
+    ActivityResponse:
+      type: object
+      required: [id, title, description, date, status, sub_task_id, created_by]
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        description:
+          type: string
+        date:
+          type: string
+          format: date
+        status:
+          type: string
+        sub_task_id:
+          type: integer
+        created_by:
+          $ref: '#/components/schemas/UserReference'
+
+    ActivityListResponse:
+      type: object
+      required: [items, total, page, page_size, total_pages]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ActivityResponse'
+        total:
+          type: integer
+        page:
+          type: integer
+        page_size:
+          type: integer
+        total_pages:
+          type: integer
+
+    DashboardRecentTask:
+      type: object
+      required: [id, title, status, created_by]
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        status:
+          $ref: '#/components/schemas/TaskStatus'
+        created_by:
+          $ref: '#/components/schemas/UserReference'
+
+    DashboardResponse:
+      type: object
+      required: [total_tasks, completed_tasks, in_progress_tasks, pending_tasks, recent_tasks]
+      properties:
+        total_tasks:
+          type: integer
+        completed_tasks:
+          type: integer
+        in_progress_tasks:
+          type: integer
+        pending_tasks:
+          type: integer
+        recent_tasks:
+          type: array
+          items:
+            $ref: '#/components/schemas/DashboardRecentTask'
+
+    AuditLogResponse:
+      type: object
+      required: [id, action, entity_type, message, created_at]
+      properties:
+        id:
+          type: integer
+        action:
+          type: string
+        entity_type:
+          type: string
+        entity_id:
+          type: integer
+          nullable: true
+        message:
+          type: string
+        details:
+          type: object
+          nullable: true
+          additionalProperties: true
+        user_id:
+          type: integer
+          nullable: true
+        user:
+          allOf:
+            - $ref: '#/components/schemas/UserReference'
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+
+    AuditLogListResponse:
+      type: object
+      required: [items, total, page, page_size, total_pages]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuditLogResponse'
+        total:
+          type: integer
+        page:
+          type: integer
+        page_size:
+          type: integer
+        total_pages:
+          type: integer
