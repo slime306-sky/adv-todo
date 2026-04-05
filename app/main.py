@@ -203,6 +203,35 @@ def _ensure_sqlite_sub_tasks_timeline_columns():
             connection.execute(text("ALTER TABLE sub_tasks ADD COLUMN completed_at DATETIME"))
 
 
+def _ensure_sub_tasks_assigned_to_column():
+    with engine.begin() as connection:
+        if engine.url.drivername.startswith("sqlite"):
+            table_exists = connection.execute(
+                text(
+                    "SELECT name FROM sqlite_master "
+                    "WHERE type = 'table' AND name = 'sub_tasks'"
+                )
+            ).first()
+
+            if not table_exists:
+                return
+
+            existing_columns = {
+                row[1] for row in connection.execute(text("PRAGMA table_info(sub_tasks)"))
+            }
+
+            if "assigned_to" not in existing_columns:
+                connection.execute(
+                    text("ALTER TABLE sub_tasks ADD COLUMN assigned_to INTEGER")
+                )
+            return
+
+        # PostgreSQL and other backends that support IF NOT EXISTS.
+        connection.execute(
+            text("ALTER TABLE sub_tasks ADD COLUMN IF NOT EXISTS assigned_to INTEGER")
+        )
+
+
 def _ensure_audit_logs_cascade_delete():
     """Ensure audit_logs foreign key has ondelete CASCADE to allow user deletion."""
     if not engine.url.drivername.startswith("sqlite"):
@@ -270,6 +299,7 @@ def _ensure_audit_logs_cascade_delete():
 _ensure_sqlite_tasks_columns()
 _repair_legacy_sqlite_sub_tasks_table()
 _ensure_sqlite_sub_tasks_timeline_columns()
+_ensure_sub_tasks_assigned_to_column()
 _ensure_audit_logs_cascade_delete()
 
 app = FastAPI()

@@ -32,5 +32,5 @@ class SubTask(Base):
     assigned_to = Column(Integer, ForeignKey("users.id"), nullable=True)
 
     task = relationship("Task", backref="sub_tasks")
-    creator = relationship("User")
+    creator = relationship("User", foreign_keys=[created_by])
     assignee = relationship("User", foreign_keys=[assigned_to])
