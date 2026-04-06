@@ -46,6 +46,16 @@ def _ensure_sqlite_tasks_columns():
                 connection.execute(
                     text("ALTER TABLE tasks ADD COLUMN parent_task_id INTEGER")
                 )
+
+            if "start_date" not in existing_columns:
+                connection.execute(
+                    text("ALTER TABLE tasks ADD COLUMN start_date DATETIME")
+                )
+
+            if "end_date" not in existing_columns:
+                connection.execute(
+                    text("ALTER TABLE tasks ADD COLUMN end_date DATETIME")
+                )
             return
 
         # PostgreSQL and other backends that support IF NOT EXISTS.
@@ -69,6 +79,12 @@ def _ensure_sqlite_tasks_columns():
         )
         connection.execute(
             text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS parent_task_id INTEGER")
+        )
+        connection.execute(
+            text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS start_date TIMESTAMP")
+        )
+        connection.execute(
+            text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS end_date TIMESTAMP")
         )
 
 
@@ -110,6 +126,7 @@ def _repair_legacy_sqlite_sub_tasks_table():
                         estimated_hours INTEGER,
                         actual_days INTEGER NOT NULL DEFAULT 0,
                         actual_hours INTEGER NOT NULL DEFAULT 0,
+                        start_date DATETIME,
                         created_at DATETIME,
                         completed_at DATETIME,
                         task_id INTEGER NOT NULL,
@@ -135,6 +152,7 @@ def _repair_legacy_sqlite_sub_tasks_table():
                         estimated_hours,
                         actual_days,
                         actual_hours,
+                        start_date,
                         created_at,
                         completed_at,
                         task_id,
@@ -150,6 +168,7 @@ def _repair_legacy_sqlite_sub_tasks_table():
                         COALESCE(estimated_hours, 0),
                         0,
                         0,
+                        created_at,
                         created_at,
                         NULL,
                         task_id,
@@ -202,6 +221,13 @@ def _ensure_sqlite_sub_tasks_timeline_columns():
         if "completed_at" not in existing_columns:
             connection.execute(text("ALTER TABLE sub_tasks ADD COLUMN completed_at DATETIME"))
 
+        if "start_date" not in existing_columns:
+            connection.execute(text("ALTER TABLE sub_tasks ADD COLUMN start_date DATETIME"))
+
+        connection.execute(
+            text("UPDATE sub_tasks SET start_date = created_at WHERE start_date IS NULL")
+        )
+
 
 def _ensure_sub_tasks_assigned_to_column():
     with engine.begin() as connection:
@@ -224,11 +250,26 @@ def _ensure_sub_tasks_assigned_to_column():
                 connection.execute(
                     text("ALTER TABLE sub_tasks ADD COLUMN assigned_to INTEGER")
                 )
+
+            if "start_date" not in existing_columns:
+                connection.execute(
+                    text("ALTER TABLE sub_tasks ADD COLUMN start_date DATETIME")
+                )
+
+            connection.execute(
+                text("UPDATE sub_tasks SET start_date = created_at WHERE start_date IS NULL")
+            )
             return
 
         # PostgreSQL and other backends that support IF NOT EXISTS.
         connection.execute(
             text("ALTER TABLE sub_tasks ADD COLUMN IF NOT EXISTS assigned_to INTEGER")
+        )
+        connection.execute(
+            text("ALTER TABLE sub_tasks ADD COLUMN IF NOT EXISTS start_date TIMESTAMP")
+        )
+        connection.execute(
+            text("UPDATE sub_tasks SET start_date = created_at WHERE start_date IS NULL")
         )
 
 

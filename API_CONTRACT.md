@@ -269,6 +269,11 @@ Response:
 
 Creates a task. Assignment now lives on sub-tasks, so task creation only needs the task title, description, and optional nested sub-tasks.
 
+Task dates are derived from sub-tasks:
+
+- `task.start_date` = earliest sub-task `start_date`
+- `task.end_date` = latest `(sub_task.start_date + estimated_days + estimated_hours)`
+
 Request body:
 
 ```json
@@ -281,6 +286,7 @@ Request body:
       "description": "Draft DB tables",
       "status": "not complete",
       "priority": 50,
+      "start_date": "2026-04-05T09:00:00Z",
       "estimated_days": 1,
       "estimated_hours": 0,
       "actual_days": 0,
@@ -307,6 +313,8 @@ Response:
   "status": "not complete",
   "estimated_days": 1,
   "estimated_hours": 0,
+  "start_date": "2026-04-05T09:00:00Z",
+  "end_date": "2026-04-06T09:00:00Z",
   "created_by": {"id": 1, "name": "alice"},
   "version": "1.0.0",
   "parent_task_id": null,
@@ -454,6 +462,8 @@ Admin-only. Deletes a task.
 
 Creates a sub-task under a task. The user must be allowed to manage the task.
 
+`start_date` is required. Task-level `start_date` and `end_date` are recalculated from sub-task dates and estimates.
+
 Request body:
 
 ```json
@@ -462,6 +472,7 @@ Request body:
   "description": "Create the initial schema",
   "status": "not complete",
   "priority": 100,
+  "start_date": "2026-04-05T09:00:00Z",
   "estimated_days": 1,
   "estimated_hours": 4,
   "actual_days": 0,
@@ -479,6 +490,7 @@ Response:
   "description": "Create the initial schema",
   "status": "not complete",
   "priority": 100,
+  "start_date": "2026-04-05T09:00:00Z",
   "estimated_days": 1,
   "estimated_hours": 4,
   "actual_days": 0,

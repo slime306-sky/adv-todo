@@ -1123,7 +1123,7 @@ components:
 
     TaskSubTaskCreate:
       type: object
-      required: [title, description]
+      required: [title, description, start_date]
       properties:
         title:
           type: string
@@ -1145,6 +1145,9 @@ components:
           minimum: 0
           maximum: 23
           default: 0
+        start_date:
+          type: string
+          format: date-time
         actual_days:
           type: integer
           minimum: 0
@@ -1205,6 +1208,14 @@ components:
           type: integer
         estimated_hours:
           type: integer
+        start_date:
+          type: string
+          format: date-time
+          nullable: true
+        end_date:
+          type: string
+          format: date-time
+          nullable: true
         created_by:
           $ref: '#/components/schemas/UserReference'
         version:
@@ -1247,6 +1258,14 @@ components:
           type: integer
         estimated_hours:
           type: integer
+        start_date:
+          type: string
+          format: date-time
+          nullable: true
+        end_date:
+          type: string
+          format: date-time
+          nullable: true
         created_by:
           $ref: '#/components/schemas/UserReference'
 
@@ -1464,7 +1483,7 @@ components:
 
     SubTaskCreate:
       type: object
-      required: [title, description, task_id]
+      required: [title, description, start_date, task_id]
       properties:
         title:
           type: string
@@ -1486,6 +1505,9 @@ components:
           minimum: 0
           maximum: 23
           default: 0
+        start_date:
+          type: string
+          format: date-time
         actual_days:
           type: integer
           minimum: 0
@@ -1524,6 +1546,10 @@ components:
           type: integer
           minimum: 0
           maximum: 23
+        start_date:
+          type: string
+          format: date-time
+          nullable: true
         actual_days:
           type: integer
           minimum: 0
@@ -1558,6 +1584,10 @@ components:
           type: integer
         estimated_hours:
           type: integer
+        start_date:
+          type: string
+          format: date-time
+          nullable: true
         actual_days:
           type: integer
         actual_hours:

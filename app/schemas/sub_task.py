@@ -14,6 +14,7 @@ class SubTaskCreate(BaseModel):
     priority: Annotated[int, Field(ge=0, le=100)] = 0
     estimated_days: Annotated[int, Field(ge=0)] = 0
     estimated_hours: Annotated[int, Field(ge=0, lt=24)] = 0
+    start_date: datetime
     actual_days: Annotated[int, Field(ge=0)] = 0
     actual_hours: Annotated[int, Field(ge=0, lt=24)] = 0
     task_id: int
@@ -28,6 +29,7 @@ class SubTaskUpdate(BaseModel):
     priority: Annotated[int, Field(ge=0, le=100)] | None = None
     estimated_days: Annotated[int, Field(ge=0)] | None = None
     estimated_hours: Annotated[int, Field(ge=0, lt=24)] | None = None
+    start_date: datetime | None = None
     actual_days: Annotated[int, Field(ge=0)] | None = None
     actual_hours: Annotated[int, Field(ge=0, lt=24)] | None = None
     task_id: int | None = None
@@ -43,6 +45,7 @@ class SubTaskResponse(BaseModel):
     priority: int
     estimated_days: int
     estimated_hours: int
+    start_date: datetime | None = None
     actual_days: int
     actual_hours: int
     created_at: datetime

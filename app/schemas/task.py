@@ -16,6 +16,7 @@ class TaskSubTaskCreate(BaseModel):
     priority: Annotated[int, Field(ge=0, le=100)] = 0
     estimated_days: Annotated[int, Field(ge=0)] = 0
     estimated_hours: Annotated[int, Field(ge=0, lt=24)] = 0
+    start_date: datetime
     actual_days: Annotated[int, Field(ge=0)] = 0
     actual_hours: Annotated[int, Field(ge=0, lt=24)] = 0
     assigned_to: int | None = None
@@ -49,6 +50,8 @@ class TaskResponse(BaseModel):
     status: TaskStatus
     estimated_days: int
     estimated_hours: int
+    start_date: datetime | None = None
+    end_date: datetime | None = None
     created_by: UserReference
     version: str
     parent_task_id: int | None = None
@@ -73,6 +76,8 @@ class TaskAdminResponse(BaseModel):
     status: TaskStatus
     estimated_days: int
     estimated_hours: int
+    start_date: datetime | None = None
+    end_date: datetime | None = None
     created_by: UserReference
 
     class Config:

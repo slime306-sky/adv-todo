@@ -1,5 +1,5 @@
 ﻿from fastapi import APIRouter, Depends, Query
-from datetime import datetime
+from datetime import datetime, timedelta
 from math import floor
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
@@ -42,6 +42,7 @@ def _serialize_sub_task(sub_task: SubTask):
         "priority": sub_task.priority,
         "estimated_days": sub_task.estimated_days,
         "estimated_hours": sub_task.estimated_hours,
+        "start_date": sub_task.start_date,
         "actual_days": sub_task.actual_days,
         "actual_hours": sub_task.actual_hours,
         "created_at": sub_task.created_at,
@@ -125,6 +126,28 @@ def recalculate_task_estimated_time(db: Session, task_id: int):
 
     task.estimated_days = total_hours // 24
     task.estimated_hours = total_hours % 24
+
+    sub_tasks = db.query(SubTask).filter(SubTask.task_id == task_id).all()
+    start_candidates = [sub_task.start_date for sub_task in sub_tasks if sub_task.start_date]
+
+    if not start_candidates:
+        task.start_date = None
+        task.end_date = None
+        return
+
+    task.start_date = min(start_candidates)
+
+    end_candidates = []
+    for sub_task in sub_tasks:
+        if not sub_task.start_date:
+            continue
+        estimated_duration = timedelta(
+            days=sub_task.estimated_days or 0,
+            hours=sub_task.estimated_hours or 0,
+        )
+        end_candidates.append(sub_task.start_date + estimated_duration)
+
+    task.end_date = max(end_candidates) if end_candidates else task.start_date
 
 
 def sync_task_completion_status(db: Session, task_id: int):
@@ -300,6 +323,7 @@ def create_sub_task(
         priority=sub_task.priority,
         estimated_days=sub_task.estimated_days,
         estimated_hours=sub_task.estimated_hours,
+        start_date=sub_task.start_date,
         actual_days=sub_task.actual_days,
         actual_hours=sub_task.actual_hours,
         task_id=sub_task.task_id,

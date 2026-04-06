@@ -24,6 +24,7 @@ class SubTask(Base):
     estimated_hours = Column(Integer, default=0)
     actual_days = Column(Integer, default=0)
     actual_hours = Column(Integer, default=0)
+    start_date = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     completed_at = Column(DateTime, nullable=True)
 

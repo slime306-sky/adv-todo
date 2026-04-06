@@ -1,6 +1,6 @@
 ﻿import enum
 
-from sqlalchemy import Column, ForeignKey, Integer, String
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, String
 from sqlalchemy.orm import relationship
 
 from app.core.database import Base
@@ -22,6 +22,8 @@ class Task(Base):
     status = Column(String, default=TaskStatus.not_complete.value)
     estimated_days = Column(Integer, default=0)
     estimated_hours = Column(Integer, default=0)
+    start_date = Column(DateTime, nullable=True)
+    end_date = Column(DateTime, nullable=True)
 
     version_major = Column(Integer, default=1, nullable=False)
     version_minor = Column(Integer, default=0, nullable=False)

@@ -59,6 +59,7 @@ def _serialize_sub_task(sub_task: SubTask):
         "priority": sub_task.priority,
         "estimated_days": sub_task.estimated_days,
         "estimated_hours": sub_task.estimated_hours,
+        "start_date": sub_task.start_date,
         "actual_days": sub_task.actual_days,
         "actual_hours": sub_task.actual_hours,
         "created_at": sub_task.created_at,
@@ -81,6 +82,8 @@ def _serialize_task(task: Task, include_sub_tasks: bool = False):
         "status": task.status,
         "estimated_days": task.estimated_days,
         "estimated_hours": task.estimated_hours,
+        "start_date": task.start_date,
+        "end_date": task.end_date,
         "created_by": _serialize_user_reference(task.creator, task.created_by),
         "version": f"{task.version_major}.{task.version_minor}.{task.version_patch}",
         "parent_task_id": task.parent_task_id,
@@ -141,6 +144,7 @@ def create_task(
                     priority=sub_task.priority,
                     estimated_days=sub_task.estimated_days,
                     estimated_hours=sub_task.estimated_hours,
+                    start_date=sub_task.start_date,
                     actual_days=sub_task.actual_days,
                     actual_hours=sub_task.actual_hours,
                     task_id=new_task.id,
@@ -449,6 +453,8 @@ def get_all_tasks_admin(
                 "status": task.status,
                 "estimated_days": task.estimated_days,
                 "estimated_hours": task.estimated_hours,
+                "start_date": task.start_date,
+                "end_date": task.end_date,
                 "created_by": _serialize_user_reference(task.creator, task.created_by),
             }
         )
