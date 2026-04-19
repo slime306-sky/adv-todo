@@ -57,7 +57,7 @@ class TaskResponse(BaseModel):
     parent_task_id: int | None = None
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 class TaskCreateResponse(TaskResponse):
@@ -81,7 +81,7 @@ class TaskAdminResponse(BaseModel):
     created_by: UserReference
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 class TaskListResponse(BaseModel):

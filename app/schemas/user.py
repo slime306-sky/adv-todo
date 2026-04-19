@@ -26,7 +26,7 @@ class UserResponse(BaseModel):
     departments: list[DepartmentReference] = Field(default_factory=list)
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 class UserUpdate(BaseModel):

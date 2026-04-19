@@ -11,7 +11,7 @@ class DashboardRecentTask(BaseModel):
     created_by: UserReference
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 class DashboardResponse(BaseModel):

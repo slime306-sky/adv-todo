@@ -14,11 +14,11 @@ from app.models.task import Task, TaskStatus
 from app.models.user import User
 from app.routers.sub_tasks import (
     ensure_user_can_manage_task,
-    get_task_priority_total,
+    get_task_weightage_priority_total,
     recalculate_task_estimated_time,
     resolve_assigned_user,
     sync_task_completion_status,
-    validate_priority_total,
+    validate_weightage_priority_total,
 )
 from app.schemas.task import (
     TaskPriorityBulkUpdateRequest,
@@ -56,10 +56,12 @@ def _serialize_sub_task(sub_task: SubTask):
         "title": sub_task.title,
         "description": sub_task.description,
         "status": sub_task.status,
-        "priority": sub_task.priority,
+        "weightage_priority": sub_task.weightage_priority,
+        "subtask_priority": sub_task.subtask_priority,
         "estimated_days": sub_task.estimated_days,
         "estimated_hours": sub_task.estimated_hours,
         "start_date": sub_task.start_date,
+        "end_date": sub_task.calculate_end_date() if sub_task.start_date else None,
         "actual_days": sub_task.actual_days,
         "actual_hours": sub_task.actual_hours,
         "created_at": sub_task.created_at,
@@ -127,7 +129,9 @@ def create_task(
         db.flush()
 
         if task.sub_tasks:
-            validate_priority_total(sum(sub_task.priority for sub_task in task.sub_tasks))
+            validate_weightage_priority_total(
+                sum(sub_task.priority for sub_task in task.sub_tasks)
+            )
 
             for sub_task in task.sub_tasks:
                 assigned_user = resolve_assigned_user(
@@ -141,7 +145,7 @@ def create_task(
                     title=sub_task.title,
                     description=sub_task.description,
                     status=sub_task.status.value,
-                    priority=sub_task.priority,
+                    weightage_priority=sub_task.priority,
                     estimated_days=sub_task.estimated_days,
                     estimated_hours=sub_task.estimated_hours,
                     start_date=sub_task.start_date,
@@ -555,7 +559,7 @@ def get_task_timeline(
     )
 
     sub_task_count = len(task.sub_tasks)
-    total_priority = sum(sub_task.priority for sub_task in task.sub_tasks)
+    total_priority = sum(sub_task.weightage_priority for sub_task in task.sub_tasks)
 
     sub_tasks_timeline = []
     total_expected_hours = 0.0
@@ -564,7 +568,7 @@ def get_task_timeline(
         if sub_task_count == 0:
             weight = 0.0
         elif total_priority > 0:
-            weight = sub_task.priority / total_priority
+            weight = sub_task.weightage_priority / total_priority
         else:
             weight = 1.0 / sub_task_count
 
@@ -580,7 +584,7 @@ def get_task_timeline(
                 "sub_task_id": sub_task.id,
                 "title": sub_task.title,
                 "status": sub_task.status,
-                "priority": sub_task.priority,
+                "priority": sub_task.weightage_priority,
                 "estimated_hours": round(
                     _to_hours(sub_task.estimated_days, sub_task.estimated_hours), 2
                 ),
@@ -693,14 +697,16 @@ def update_task_sub_task_priorities(
         )
 
     total_priority = sum(item.priority for item in payload.items)
-    validate_priority_total(total_priority)
+    validate_weightage_priority_total(total_priority)
 
     priority_map = {item.sub_task_id: item.priority for item in payload.items}
     for sub_task in task.sub_tasks:
-        sub_task.priority = priority_map[sub_task.id]
+        sub_task.weightage_priority = priority_map[sub_task.id]
 
     db.flush()
-    validate_priority_total(get_task_priority_total(db, task_id))
+    validate_weightage_priority_total(
+        get_task_weightage_priority_total(db, task_id)
+    )
 
     log_audit_event(
         db=db,
