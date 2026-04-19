@@ -59,6 +59,42 @@ Validation failures return `422` with `code: VALIDATION_ERROR` and a `details` a
 - `complete`
 - `not complete`
 
+### Sub-task priority values
+
+- `critical`
+- `high`
+- `medium`
+- `low`
+
+### Sub-task response shape
+
+```json
+{
+  "id": 1,
+  "title": "Design schema",
+  "description": "Draft DB tables",
+  "status": "not complete",
+  "weightage_priority": 50,
+  "subtask_priority": "high",
+  "start_date": "2026-04-05T09:00:00Z",
+  "end_date": "2026-04-06T13:00:00Z",
+  "estimated_days": 1,
+  "estimated_hours": 4,
+  "actual_days": 0,
+  "actual_hours": 0,
+  "created_at": "2026-04-05T09:00:00Z",
+  "completed_at": null,
+  "task_id": 1,
+  "created_by": {"id": 1, "name": "alice"},
+  "assigned_to": {"id": 2, "name": "bob"}
+}
+```
+
+**Field Descriptions:**
+- `weightage_priority`: (0-100) Effort distribution weight; must sum to 100 within a task
+- `subtask_priority`: (critical|high|medium|low) Priority level for task importance
+- `end_date`: Auto-calculated as `start_date + estimated_days + estimated_hours`
+
 ### Sub-task update request status values
 
 - `pending`
@@ -285,7 +321,8 @@ Request body:
       "title": "Design schema",
       "description": "Draft DB tables",
       "status": "not complete",
-      "priority": 50,
+      "weightage_priority": 50,
+      "subtask_priority": "high",
       "start_date": "2026-04-05T09:00:00Z",
       "estimated_days": 1,
       "estimated_hours": 0,
@@ -301,7 +338,7 @@ Request body:
 Important rules:
 
 - If `sub_task_count` is provided, it must match the number of `sub_tasks`.
-- When nested `sub_tasks` are provided, their priorities must sum to exactly `100`.
+- When nested `sub_tasks` are provided, their `weightage_priority` values must sum to exactly `100`.
 
 Response:
 
@@ -386,15 +423,46 @@ Returns estimated, actual, and expected time bars plus per-sub-task timeline dat
 ### PUT /tasks/{task_id}/subtasks/priorities
 ### POST /tasks/{task_id}/subtasks/priorities
 
-Reorders or reprioritizes all sub-tasks on a task in one request.
+Reorders or reprioritizes all sub-tasks on a task in one request. Updates `weightage_priority` for effort distribution.
 
 Request body:
 
 ```json
 {
   "items": [
-    {"sub_task_id": 1, "priority": 60},
-    {"sub_task_id": 2, "priority": 40}
+    {"sub_task_id": 1, "weightage_priority": 60},
+    {"sub_task_id": 2, "weightage_priority": 40}
+  ]
+}
+```
+
+Response:
+
+```json
+{
+  "items": [
+    {
+      "id": 1,
+      "title": "Draft schema",
+      "weightage_priority": 60,
+      "subtask_priority": "high",
+      "status": "not complete",
+      "estimated_days": 1,
+      "estimated_hours": 4,
+      "start_date": "2026-04-05T09:00:00Z",
+      "end_date": "2026-04-06T13:00:00Z"
+    },
+    {
+      "id": 2,
+      "title": "Review schema",
+      "weightage_priority": 40,
+      "subtask_priority": "medium",
+      "status": "not complete",
+      "estimated_days": 1,
+      "estimated_hours": 0,
+      "start_date": "2026-04-06T13:00:00Z",
+      "end_date": "2026-04-07T13:00:00Z"
+    }
   ]
 }
 ```
@@ -402,7 +470,7 @@ Request body:
 Rules:
 
 - The payload must include every sub-task exactly once.
-- Priorities must sum to exactly `100`.
+- `weightage_priority` values must sum to exactly `100`.
 
 ### PUT /tasks/{task_id}
 
@@ -462,7 +530,11 @@ Admin-only. Deletes a task.
 
 Creates a sub-task under a task. The user must be allowed to manage the task.
 
-`start_date` is required. Task-level `start_date` and `end_date` are recalculated from sub-task dates and estimates.
+`start_date` is required. `end_date` is automatically calculated based on `start_date + estimated_days + estimated_hours`. Task-level `start_date` and `end_date` are recalculated from sub-task dates and estimates.
+
+**Input fields:**
+- `weightage_priority`: (0-100) Distribution weight for effort allocation. Must sum to exactly 100 across all sub-tasks in a task.
+- `subtask_priority`: (critical|high|medium|low) Priority level for urgency/importance.
 
 Request body:
 
@@ -471,13 +543,16 @@ Request body:
   "title": "Draft schema",
   "description": "Create the initial schema",
   "status": "not complete",
-  "priority": 100,
+  "weightage_priority": 100,
+  "subtask_priority": "high",
   "start_date": "2026-04-05T09:00:00Z",
   "estimated_days": 1,
   "estimated_hours": 4,
   "actual_days": 0,
   "actual_hours": 0,
-  "task_id": 1
+  "task_id": 1,
+  "assigned_to": null,
+  "assigned_to_username": null
 }
 ```
 
@@ -489,8 +564,10 @@ Response:
   "title": "Draft schema",
   "description": "Create the initial schema",
   "status": "not complete",
-  "priority": 100,
+  "weightage_priority": 100,
+  "subtask_priority": "high",
   "start_date": "2026-04-05T09:00:00Z",
+  "end_date": "2026-04-06T13:00:00Z",
   "estimated_days": 1,
   "estimated_hours": 4,
   "actual_days": 0,
@@ -530,7 +607,47 @@ Behavior:
 - Admins update the sub-task immediately.
 - Non-admins create a pending approval request instead of applying the update.
 - Completed sub-tasks cannot be reopened.
-- Reassigned or re-prioritized updates must still keep task-level priority totals at exactly `100`.
+- Reassigned or re-weighted updates must still keep task-level `weightage_priority` totals at exactly `100`.
+- When `start_date`, `estimated_days`, or `estimated_hours` are updated, `end_date` is automatically recalculated.
+
+**Input fields (all optional):**
+- `weightage_priority`: (0-100) Must maintain 100 total across all sub-tasks in task
+- `subtask_priority`: (critical|high|medium|low) Priority level
+- Other updatable fields: `title`, `description`, `status`, `estimated_days`, `estimated_hours`, `start_date`, `actual_days`, `actual_hours`, `task_id`, `assigned_to`, `assigned_to_username`
+
+Request body:
+
+```json
+{
+  "weightage_priority": 50,
+  "subtask_priority": "critical",
+  "estimated_days": 2
+}
+```
+
+Response:
+
+```json
+{
+  "id": 1,
+  "title": "Draft schema",
+  "description": "Create the initial schema",
+  "status": "not complete",
+  "weightage_priority": 50,
+  "subtask_priority": "critical",
+  "start_date": "2026-04-05T09:00:00Z",
+  "end_date": "2026-04-07T09:00:00Z",
+  "estimated_days": 2,
+  "estimated_hours": 4,
+  "actual_days": 0,
+  "actual_hours": 0,
+  "created_at": "2026-04-05T09:00:00Z",
+  "completed_at": null,
+  "task_id": 1,
+  "created_by": {"id": 1, "name": "alice"},
+  "assigned_to": {"id": 2, "name": "bob"}
+}
+```
 
 ### GET /subtask-update-requests/my
 

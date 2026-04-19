@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.core.audit import log_audit_event
 from app.core.errors import api_error
 from app.core.security import get_current_user, get_db, require_role
-from app.models.sub_task import SubTask
+from app.models.sub_task import SubTask, SubTaskPriority
 from app.models.sub_task_update_request import SubTaskUpdateRequest, SubTaskUpdateRequestStatus
 from app.models.task import Task, TaskStatus
 from app.models.user import User
@@ -34,15 +34,18 @@ def _serialize_user_reference(user: User | None, fallback_id: int | None):
 
 
 def _serialize_sub_task(sub_task: SubTask):
+    end_date = sub_task.calculate_end_date() if sub_task.start_date else None
     return {
         "id": sub_task.id,
         "title": sub_task.title,
         "description": sub_task.description,
         "status": sub_task.status,
-        "priority": sub_task.priority,
+        "weightage_priority": sub_task.weightage_priority,
+        "subtask_priority": sub_task.subtask_priority,
         "estimated_days": sub_task.estimated_days,
         "estimated_hours": sub_task.estimated_hours,
         "start_date": sub_task.start_date,
+        "end_date": end_date,
         "actual_days": sub_task.actual_days,
         "actual_hours": sub_task.actual_hours,
         "created_at": sub_task.created_at,
@@ -174,22 +177,22 @@ def sync_task_completion_status(db: Session, task_id: int):
         task.status = TaskStatus.complete.value
 
 
-def get_task_priority_total(db: Session, task_id: int) -> int:
+def get_task_weightage_priority_total(db: Session, task_id: int) -> int:
     return (
-        db.query(func.coalesce(func.sum(SubTask.priority), 0))
+        db.query(func.coalesce(func.sum(SubTask.weightage_priority), 0))
         .filter(SubTask.task_id == task_id)
         .scalar()
         or 0
     )
 
 
-def validate_priority_total(total_priority: int):
+def validate_weightage_priority_total(total_priority: int):
     if total_priority != PRIORITY_TOTAL_TARGET:
         raise api_error(
             status_code=400,
-            code="INVALID_SUBTASK_PRIORITY_TOTAL",
+            code="INVALID_SUBTASK_WEIGHTAGE_PRIORITY_TOTAL",
             message=(
-                "Sub-task priorities for a task must sum to exactly 100. "
+                "Sub-task weightage priorities for a task must sum to exactly 100. "
                 f"Current total would be {total_priority}."
             ),
         )
@@ -235,6 +238,10 @@ def _normalize_update_data(db: Session, sub_task: SubTask, update_data: dict):
             )
         update_data["status"] = update_data["status"].value
 
+    if "subtask_priority" in update_data and update_data["subtask_priority"] is not None:
+        if isinstance(update_data["subtask_priority"], SubTaskPriority):
+            update_data["subtask_priority"] = update_data["subtask_priority"].value
+
     if "assigned_to_username" in update_data:
         username = update_data.pop("assigned_to_username")
         if username:
@@ -260,23 +267,23 @@ def _normalize_update_data(db: Session, sub_task: SubTask, update_data: dict):
 def _validate_sub_task_update_constraints(db: Session, sub_task: SubTask, update_data: dict):
     old_task_id = sub_task.task_id
     new_task_id = update_data.get("task_id", old_task_id)
-    new_priority = update_data.get("priority", sub_task.priority)
+    new_weightage_priority = update_data.get("weightage_priority", sub_task.weightage_priority)
 
     validate_task(db, new_task_id)
 
-    old_task_projected_total = get_task_priority_total(db, old_task_id) - sub_task.priority
+    old_task_projected_total = get_task_weightage_priority_total(db, old_task_id) - sub_task.weightage_priority
     old_task_remaining_count = (
         db.query(func.count(SubTask.id)).filter(SubTask.task_id == old_task_id).scalar() or 0
     ) - 1
 
     if new_task_id == old_task_id:
-        old_task_projected_total += new_priority
-        validate_priority_total(old_task_projected_total)
+        old_task_projected_total += new_weightage_priority
+        validate_weightage_priority_total(old_task_projected_total)
     else:
         if old_task_remaining_count > 0:
-            validate_priority_total(old_task_projected_total)
-        new_task_projected_total = get_task_priority_total(db, new_task_id) + new_priority
-        validate_priority_total(new_task_projected_total)
+            validate_weightage_priority_total(old_task_projected_total)
+        new_task_projected_total = get_task_weightage_priority_total(db, new_task_id) + new_weightage_priority
+        validate_weightage_priority_total(new_task_projected_total)
 
 
 def _apply_sub_task_update(db: Session, sub_task: SubTask, update_data: dict):
@@ -285,6 +292,13 @@ def _apply_sub_task_update(db: Session, sub_task: SubTask, update_data: dict):
 
     for key, value in update_data.items():
         setattr(sub_task, key, value)
+
+    # Recalculate end_date if any relevant fields changed
+    if any(field in update_data for field in ['start_date', 'estimated_days', 'estimated_hours']):
+        if sub_task.start_date:
+            sub_task.end_date = sub_task.start_date + timedelta(days=sub_task.estimated_days, hours=sub_task.estimated_hours)
+        else:
+            sub_task.end_date = None
 
     if old_status != TaskStatus.complete.value and sub_task.status == TaskStatus.complete.value:
         sub_task.completed_at = datetime.utcnow()
@@ -306,8 +320,8 @@ def create_sub_task(
     task = validate_task(db, sub_task.task_id)
     ensure_user_can_manage_task(task, current_user)
 
-    projected_total = get_task_priority_total(db, sub_task.task_id) + sub_task.priority
-    validate_priority_total(projected_total)
+    projected_total = get_task_weightage_priority_total(db, sub_task.task_id) + sub_task.weightage_priority
+    validate_weightage_priority_total(projected_total)
 
     assigned_user = resolve_assigned_user(
         db=db,
@@ -320,10 +334,12 @@ def create_sub_task(
         title=sub_task.title,
         description=sub_task.description,
         status=sub_task.status.value,
-        priority=sub_task.priority,
+        weightage_priority=sub_task.weightage_priority,
+        subtask_priority=sub_task.subtask_priority.value,
         estimated_days=sub_task.estimated_days,
         estimated_hours=sub_task.estimated_hours,
         start_date=sub_task.start_date,
+        end_date=sub_task.start_date + timedelta(days=sub_task.estimated_days, hours=sub_task.estimated_hours) if sub_task.start_date else None,
         actual_days=sub_task.actual_days,
         actual_hours=sub_task.actual_hours,
         task_id=sub_task.task_id,
@@ -687,8 +703,8 @@ def delete_sub_task(
         db.query(func.count(SubTask.id)).filter(SubTask.task_id == sub_task.task_id).scalar() or 0
     ) - 1
     if remaining_sub_task_count > 0:
-        projected_total = get_task_priority_total(db, sub_task.task_id) - sub_task.priority
-        validate_priority_total(projected_total)
+        projected_total = get_task_weightage_priority_total(db, sub_task.task_id) - sub_task.weightage_priority
+        validate_weightage_priority_total(projected_total)
 
     task_id = sub_task.task_id
     log_audit_event(
