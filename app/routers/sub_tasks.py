@@ -225,6 +225,21 @@ def validate_task(db: Session, task_id: int):
     return task
 
 
+def _enforce_admin_only_priority_fields(current_user: User, payload_fields: set[str]):
+    if current_user.role == "admin":
+        return
+
+    restricted_fields = {"weightage_priority", "subtask_priority"}
+    attempted_fields = sorted(restricted_fields.intersection(payload_fields))
+    if attempted_fields:
+        raise api_error(
+            status_code=403,
+            code="SUBTASK_PRIORITY_ADMIN_ONLY",
+            message="Only admins can set or update weightage_priority and subtask_priority",
+            details={"restricted_fields": attempted_fields},
+        )
+
+
 def _normalize_update_data(db: Session, sub_task: SubTask, update_data: dict):
     if "status" in update_data and update_data["status"] is not None:
         if (
@@ -317,6 +332,8 @@ def create_sub_task(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    _enforce_admin_only_priority_fields(current_user, set(sub_task.__fields_set__))
+
     task = validate_task(db, sub_task.task_id)
     ensure_user_can_manage_task(task, current_user)
 
@@ -471,6 +488,8 @@ def update_sub_task(
             code="EMPTY_UPDATE_PAYLOAD",
             message="Provide at least one field to update",
         )
+
+    _enforce_admin_only_priority_fields(current_user, set(update_data.keys()))
 
     _normalize_update_data(db, sub_task, update_data)
     _validate_sub_task_update_constraints(db, sub_task, update_data)

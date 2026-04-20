@@ -3,7 +3,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, root_validator
 
-from app.models.sub_task import SubTaskStatus
+from app.models.sub_task import SubTaskPriority, SubTaskStatus
 from app.models.task import TaskStatus
 from app.schemas.sub_task import SubTaskResponse
 from app.schemas.user import UserReference
@@ -13,7 +13,8 @@ class TaskSubTaskCreate(BaseModel):
     title: str
     description: str
     status: SubTaskStatus = SubTaskStatus.not_complete
-    priority: Annotated[int, Field(ge=0, le=100)] = 0
+    weightage_priority: Annotated[int, Field(ge=0, le=100)] = 0
+    subtask_priority: SubTaskPriority = SubTaskPriority.medium
     estimated_days: Annotated[int, Field(ge=0)] = 0
     estimated_hours: Annotated[int, Field(ge=0, lt=24)] = 0
     start_date: datetime
@@ -137,7 +138,7 @@ class TaskTimelineResponse(BaseModel):
 
 class SubTaskPriorityItem(BaseModel):
     sub_task_id: int
-    priority: Annotated[int, Field(ge=0, le=100)]
+    weightage_priority: Annotated[int, Field(ge=0, le=100)]
 
 
 class TaskPriorityBulkUpdateRequest(BaseModel):

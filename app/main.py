@@ -1,10 +1,13 @@
 ﻿import os
+import time
 import uuid
+from urllib.parse import urlparse
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
+from sqlalchemy.exc import OperationalError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.core.database import Base, SessionLocal, engine
@@ -17,7 +20,8 @@ from app.core.security import is_supported_password_hash
 from app.models.user import User
 from app.routers import activities, audit_logs, auth, dashboard, departments, sub_tasks, tasks, users
 
-Base.metadata.create_all(bind=engine)
+DB_INIT_MAX_RETRIES = int(os.environ.get("DB_INIT_MAX_RETRIES", "5"))
+DB_INIT_RETRY_DELAY_SECONDS = float(os.environ.get("DB_INIT_RETRY_DELAY_SECONDS", "2"))
 
 
 def _ensure_sqlite_tasks_columns():
@@ -337,17 +341,48 @@ def _ensure_audit_logs_cascade_delete():
                 break
 
 
-_ensure_sqlite_tasks_columns()
-_repair_legacy_sqlite_sub_tasks_table()
-_ensure_sqlite_sub_tasks_timeline_columns()
-_ensure_sub_tasks_assigned_to_column()
-_ensure_audit_logs_cascade_delete()
-
 app = FastAPI()
+
+
+def _database_host_hint() -> str:
+    database_url = os.environ.get("DATABASE_URL", "")
+    if not database_url:
+        return "DATABASE_URL not set"
+
+    parsed = urlparse(database_url)
+    return parsed.hostname or "Unable to parse host from DATABASE_URL"
+
+
+def _initialize_database_with_retry() -> None:
+    last_error: Exception | None = None
+
+    for attempt in range(1, DB_INIT_MAX_RETRIES + 1):
+        try:
+            Base.metadata.create_all(bind=engine)
+            _ensure_sqlite_tasks_columns()
+            _repair_legacy_sqlite_sub_tasks_table()
+            _ensure_sqlite_sub_tasks_timeline_columns()
+            _ensure_sub_tasks_assigned_to_column()
+            _ensure_audit_logs_cascade_delete()
+            return
+        except OperationalError as exc:
+            last_error = exc
+            if attempt < DB_INIT_MAX_RETRIES:
+                print(
+                    f"[startup-warning] Database initialization attempt {attempt}/{DB_INIT_MAX_RETRIES} failed; retrying in {DB_INIT_RETRY_DELAY_SECONDS}s"
+                )
+                time.sleep(DB_INIT_RETRY_DELAY_SECONDS)
+
+    raise RuntimeError(
+        "Database initialization failed after retries. "
+        f"Check DATABASE_URL and DNS/network reachability. Parsed host: {_database_host_hint()}"
+    ) from last_error
 
 
 @app.on_event("startup")
 def log_invalid_password_hash_count():
+    _initialize_database_with_retry()
+
     db = SessionLocal()
     try:
         invalid_count = sum(

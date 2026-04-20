@@ -1,4 +1,4 @@
-﻿from datetime import datetime
+﻿from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, Query
 from fastapi import HTTPException
@@ -129,8 +129,25 @@ def create_task(
         db.flush()
 
         if task.sub_tasks:
+            if current_user.role != "admin":
+                restricted_fields = {"weightage_priority", "subtask_priority"}
+                attempted_fields = sorted(
+                    {
+                        field
+                        for sub_task in task.sub_tasks
+                        for field in restricted_fields.intersection(set(sub_task.__fields_set__))
+                    }
+                )
+                if attempted_fields:
+                    raise api_error(
+                        status_code=403,
+                        code="SUBTASK_PRIORITY_ADMIN_ONLY",
+                        message="Only admins can set or update weightage_priority and subtask_priority",
+                        details={"restricted_fields": attempted_fields},
+                    )
+
             validate_weightage_priority_total(
-                sum(sub_task.priority for sub_task in task.sub_tasks)
+                sum(sub_task.weightage_priority for sub_task in task.sub_tasks)
             )
 
             for sub_task in task.sub_tasks:
@@ -145,10 +162,17 @@ def create_task(
                     title=sub_task.title,
                     description=sub_task.description,
                     status=sub_task.status.value,
-                    weightage_priority=sub_task.priority,
+                    weightage_priority=sub_task.weightage_priority,
+                    subtask_priority=sub_task.subtask_priority.value,
                     estimated_days=sub_task.estimated_days,
                     estimated_hours=sub_task.estimated_hours,
                     start_date=sub_task.start_date,
+                    end_date=(
+                        sub_task.start_date
+                        + timedelta(days=sub_task.estimated_days, hours=sub_task.estimated_hours)
+                        if sub_task.start_date
+                        else None
+                    ),
                     actual_days=sub_task.actual_days,
                     actual_hours=sub_task.actual_hours,
                     task_id=new_task.id,
@@ -646,7 +670,7 @@ def update_task_sub_task_priorities(
     task_id: int,
     payload: TaskPriorityBulkUpdateRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_role("admin")),
 ):
     task = (
         db.query(Task)
@@ -696,10 +720,10 @@ def update_task_sub_task_priorities(
             message="Payload sub-task ids must exactly match this task's sub-tasks",
         )
 
-    total_priority = sum(item.priority for item in payload.items)
+    total_priority = sum(item.weightage_priority for item in payload.items)
     validate_weightage_priority_total(total_priority)
 
-    priority_map = {item.sub_task_id: item.priority for item in payload.items}
+    priority_map = {item.sub_task_id: item.weightage_priority for item in payload.items}
     for sub_task in task.sub_tasks:
         sub_task.weightage_priority = priority_map[sub_task.id]
 

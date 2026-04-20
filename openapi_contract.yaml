@@ -463,7 +463,7 @@ paths:
   /tasks/{task_id}/subtasks/priorities:
     put:
       tags: [tasks]
-      summary: Bulk update sub-task priorities
+      summary: Bulk update sub-task priorities (admin only)
       operationId: updateSubTaskPriorities
       parameters:
         - $ref: '#/components/parameters/TaskIdPath'
@@ -480,9 +480,11 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TaskPriorityBulkUpdateResponse'
+        '403':
+          $ref: '#/components/responses/Error403'
     post:
       tags: [tasks]
-      summary: Bulk update sub-task priorities (alias)
+      summary: Bulk update sub-task priorities (alias, admin only)
       operationId: updateSubTaskPrioritiesAlias
       parameters:
         - $ref: '#/components/parameters/TaskIdPath'
@@ -499,6 +501,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TaskPriorityBulkUpdateResponse'
+        '403':
+          $ref: '#/components/responses/Error403'
 
   /tasks/{task_id}/revise:
     post:
@@ -525,6 +529,7 @@ paths:
     post:
       tags: [sub-tasks]
       summary: Create sub-task
+      description: Both admin and user roles can create sub-tasks when authorized for the parent task. Only admins can set weightage_priority and subtask_priority.
       operationId: createSubTask
       requestBody:
         required: true
@@ -539,6 +544,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SubTaskResponse'
+        '403':
+          $ref: '#/components/responses/Error403'
     get:
       tags: [sub-tasks]
       summary: List sub-tasks
@@ -580,6 +587,7 @@ paths:
     put:
       tags: [sub-tasks]
       summary: Update sub-task or create approval request
+      description: Both admin and user roles can update sub-tasks when authorized for the parent task. Only admins can update weightage_priority and subtask_priority.
       operationId: updateSubTask
       parameters:
         - $ref: '#/components/parameters/SubTaskIdPath'
@@ -596,6 +604,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SubTaskResponse'
+        '403':
+          $ref: '#/components/responses/Error403'
     delete:
       tags: [sub-tasks]
       summary: Delete sub-task
@@ -957,6 +967,10 @@ components:
       type: string
       enum: [complete, not complete]
 
+    SubTaskPriority:
+      type: string
+      enum: [critical, high, medium, low]
+
     SubTaskUpdateRequestStatus:
       type: string
       enum: [pending, approved, rejected]
@@ -1131,11 +1145,13 @@ components:
           type: string
         status:
           $ref: '#/components/schemas/SubTaskStatus'
-        priority:
+        weightage_priority:
           type: integer
           minimum: 0
           maximum: 100
           default: 0
+        subtask_priority:
+          $ref: '#/components/schemas/SubTaskPriority'
         estimated_days:
           type: integer
           minimum: 0
@@ -1384,11 +1400,11 @@ components:
 
     SubTaskPriorityItem:
       type: object
-      required: [sub_task_id, priority]
+      required: [sub_task_id, weightage_priority]
       properties:
         sub_task_id:
           type: integer
-        priority:
+        weightage_priority:
           type: integer
           minimum: 0
           maximum: 100
@@ -1491,11 +1507,13 @@ components:
           type: string
         status:
           $ref: '#/components/schemas/SubTaskStatus'
-        priority:
+        weightage_priority:
           type: integer
           minimum: 0
           maximum: 100
           default: 0
+        subtask_priority:
+          $ref: '#/components/schemas/SubTaskPriority'
         estimated_days:
           type: integer
           minimum: 0
@@ -1535,10 +1553,12 @@ components:
           type: string
         status:
           $ref: '#/components/schemas/SubTaskStatus'
-        priority:
+        weightage_priority:
           type: integer
           minimum: 0
           maximum: 100
+        subtask_priority:
+          $ref: '#/components/schemas/SubTaskPriority'
         estimated_days:
           type: integer
           minimum: 0
@@ -1568,7 +1588,7 @@ components:
 
     SubTaskResponse:
       type: object
-      required: [id, title, description, status, priority, estimated_days, estimated_hours, actual_days, actual_hours, created_at, task_id, created_by]
+      required: [id, title, description, status, weightage_priority, subtask_priority, estimated_days, estimated_hours, actual_days, actual_hours, created_at, task_id, created_by]
       properties:
         id:
           type: integer
@@ -1578,13 +1598,20 @@ components:
           type: string
         status:
           type: string
-        priority:
+        weightage_priority:
           type: integer
+        subtask_priority:
+          type: string
+          enum: [critical, high, medium, low]
         estimated_days:
           type: integer
         estimated_hours:
           type: integer
         start_date:
+          type: string
+          format: date-time
+          nullable: true
+        end_date:
           type: string
           format: date-time
           nullable: true

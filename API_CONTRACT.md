@@ -339,6 +339,7 @@ Important rules:
 
 - If `sub_task_count` is provided, it must match the number of `sub_tasks`.
 - When nested `sub_tasks` are provided, their `weightage_priority` values must sum to exactly `100`.
+- In nested `sub_tasks`, only admins can set `weightage_priority` and `subtask_priority`.
 
 Response:
 
@@ -425,6 +426,8 @@ Returns estimated, actual, and expected time bars plus per-sub-task timeline dat
 
 Reorders or reprioritizes all sub-tasks on a task in one request. Updates `weightage_priority` for effort distribution.
 
+Admin-only endpoint.
+
 Request body:
 
 ```json
@@ -440,29 +443,11 @@ Response:
 
 ```json
 {
+  "task_id": 1,
+  "total_priority": 100,
   "items": [
-    {
-      "id": 1,
-      "title": "Draft schema",
-      "weightage_priority": 60,
-      "subtask_priority": "high",
-      "status": "not complete",
-      "estimated_days": 1,
-      "estimated_hours": 4,
-      "start_date": "2026-04-05T09:00:00Z",
-      "end_date": "2026-04-06T13:00:00Z"
-    },
-    {
-      "id": 2,
-      "title": "Review schema",
-      "weightage_priority": 40,
-      "subtask_priority": "medium",
-      "status": "not complete",
-      "estimated_days": 1,
-      "estimated_hours": 0,
-      "start_date": "2026-04-06T13:00:00Z",
-      "end_date": "2026-04-07T13:00:00Z"
-    }
+    {"sub_task_id": 1, "weightage_priority": 60},
+    {"sub_task_id": 2, "weightage_priority": 40}
   ]
 }
 ```
@@ -471,6 +456,8 @@ Rules:
 
 - The payload must include every sub-task exactly once.
 - `weightage_priority` values must sum to exactly `100`.
+
+If a non-admin tries to set or update `weightage_priority` or `subtask_priority`, the API returns `403` with code `SUBTASK_PRIORITY_ADMIN_ONLY`.
 
 ### PUT /tasks/{task_id}
 
@@ -530,11 +517,14 @@ Admin-only. Deletes a task.
 
 Creates a sub-task under a task. The user must be allowed to manage the task.
 
+Both `admin` and `user` roles can create sub-tasks when they are authorized for the parent task.
+
 `start_date` is required. `end_date` is automatically calculated based on `start_date + estimated_days + estimated_hours`. Task-level `start_date` and `end_date` are recalculated from sub-task dates and estimates.
 
 **Input fields:**
-- `weightage_priority`: (0-100) Distribution weight for effort allocation. Must sum to exactly 100 across all sub-tasks in a task.
-- `subtask_priority`: (critical|high|medium|low) Priority level for urgency/importance.
+- `weightage_priority`: (0-100) Distribution weight for effort allocation. Must sum to exactly 100 across all sub-tasks in a task. Admin-only field.
+- `subtask_priority`: (critical|high|medium|low) Priority level for urgency/importance. Admin-only field.
+- Non-admin users should omit these two fields from create payloads.
 
 Request body:
 
@@ -602,17 +592,20 @@ Returns one sub-task if the user can manage its parent task.
 
 Updates a sub-task.
 
+Both `admin` and `user` roles can update sub-tasks when they are authorized for the parent task.
+
 Behavior:
 
 - Admins update the sub-task immediately.
 - Non-admins create a pending approval request instead of applying the update.
+- Only admins can update `weightage_priority` and `subtask_priority`.
 - Completed sub-tasks cannot be reopened.
 - Reassigned or re-weighted updates must still keep task-level `weightage_priority` totals at exactly `100`.
 - When `start_date`, `estimated_days`, or `estimated_hours` are updated, `end_date` is automatically recalculated.
 
 **Input fields (all optional):**
-- `weightage_priority`: (0-100) Must maintain 100 total across all sub-tasks in task
-- `subtask_priority`: (critical|high|medium|low) Priority level
+- `weightage_priority`: (0-100) Must maintain 100 total across all sub-tasks in task. Admin-only.
+- `subtask_priority`: (critical|high|medium|low) Priority level. Admin-only.
 - Other updatable fields: `title`, `description`, `status`, `estimated_days`, `estimated_hours`, `start_date`, `actual_days`, `actual_hours`, `task_id`, `assigned_to`, `assigned_to_username`
 
 Request body:
