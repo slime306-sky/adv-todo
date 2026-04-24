@@ -145,10 +145,10 @@ def create_task(
                         message="Only admins can set or update weightage_priority and subtask_priority",
                         details={"restricted_fields": attempted_fields},
                     )
-
-            validate_weightage_priority_total(
-                sum(sub_task.weightage_priority for sub_task in task.sub_tasks)
-            )
+            else:
+                validate_weightage_priority_total(
+                    sum(sub_task.weightage_priority for sub_task in task.sub_tasks)
+                )
 
             for sub_task in task.sub_tasks:
                 assigned_user = resolve_assigned_user(

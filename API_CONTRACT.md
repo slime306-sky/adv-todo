@@ -338,8 +338,8 @@ Request body:
 Important rules:
 
 - If `sub_task_count` is provided, it must match the number of `sub_tasks`.
-- When nested `sub_tasks` are provided, their `weightage_priority` values must sum to exactly `100`.
 - In nested `sub_tasks`, only admins can set `weightage_priority` and `subtask_priority`.
+- The `weightage_priority` total must sum to exactly `100` only when those values are explicitly set by an admin.
 
 Response:
 
