@@ -1,4 +1,4 @@
-﻿import os
+import os
 import time
 import uuid
 from urllib.parse import urlparse
@@ -125,19 +125,23 @@ def _repair_legacy_sqlite_sub_tasks_table():
                         title VARCHAR NOT NULL,
                         description VARCHAR,
                         status VARCHAR,
-                        priority INTEGER NOT NULL DEFAULT 0,
+                        weightage_priority INTEGER NOT NULL DEFAULT 0,
+                        subtask_priority VARCHAR NOT NULL DEFAULT 'medium',
                         estimated_days INTEGER,
                         estimated_hours INTEGER,
                         actual_days INTEGER NOT NULL DEFAULT 0,
                         actual_hours INTEGER NOT NULL DEFAULT 0,
                         start_date DATETIME,
+                        end_date DATETIME,
                         created_at DATETIME,
                         completed_at DATETIME,
                         task_id INTEGER NOT NULL,
                         created_by INTEGER NOT NULL,
+                        assigned_to INTEGER,
                         PRIMARY KEY (id),
                         FOREIGN KEY(task_id) REFERENCES tasks (id),
-                        FOREIGN KEY(created_by) REFERENCES users (id)
+                        FOREIGN KEY(created_by) REFERENCES users (id),
+                        FOREIGN KEY(assigned_to) REFERENCES users (id)
                     )
                     """
                 )
@@ -151,16 +155,19 @@ def _repair_legacy_sqlite_sub_tasks_table():
                         title,
                         description,
                         status,
-                        priority,
+                        weightage_priority,
+                        subtask_priority,
                         estimated_days,
                         estimated_hours,
                         actual_days,
                         actual_hours,
                         start_date,
+                        end_date,
                         created_at,
                         completed_at,
                         task_id,
-                        created_by
+                        created_by,
+                        assigned_to
                     )
                     SELECT
                         id,
@@ -168,14 +175,17 @@ def _repair_legacy_sqlite_sub_tasks_table():
                         description,
                         COALESCE(status, 'not complete'),
                         0,
+                        'medium',
                         COALESCE(estimated_days, 0),
                         COALESCE(estimated_hours, 0),
                         0,
                         0,
                         created_at,
+                        NULL,
                         created_at,
                         NULL,
                         task_id,
+                        created_by,
                         created_by
                     FROM sub_tasks
                     """
@@ -207,9 +217,14 @@ def _ensure_sqlite_sub_tasks_timeline_columns():
             row[1] for row in connection.execute(text("PRAGMA table_info(sub_tasks)"))
         }
 
-        if "priority" not in existing_columns:
+        if "weightage_priority" not in existing_columns:
             connection.execute(
-                text("ALTER TABLE sub_tasks ADD COLUMN priority INTEGER NOT NULL DEFAULT 0")
+                text("ALTER TABLE sub_tasks ADD COLUMN weightage_priority INTEGER NOT NULL DEFAULT 0")
+            )
+
+        if "subtask_priority" not in existing_columns:
+            connection.execute(
+                text("ALTER TABLE sub_tasks ADD COLUMN subtask_priority VARCHAR NOT NULL DEFAULT 'medium'")
             )
 
         if "actual_days" not in existing_columns:
@@ -227,6 +242,9 @@ def _ensure_sqlite_sub_tasks_timeline_columns():
 
         if "start_date" not in existing_columns:
             connection.execute(text("ALTER TABLE sub_tasks ADD COLUMN start_date DATETIME"))
+
+        if "end_date" not in existing_columns:
+            connection.execute(text("ALTER TABLE sub_tasks ADD COLUMN end_date DATETIME"))
 
         connection.execute(
             text("UPDATE sub_tasks SET start_date = created_at WHERE start_date IS NULL")
