@@ -8,8 +8,8 @@ from sqlalchemy.orm import Session, selectinload
 from app.core.audit import log_audit_event
 from app.core.errors import api_error
 from app.core.security import get_current_user, get_db, require_role
-from app.models.sub_task import SubTask
-from app.models.task_update_request import TaskUpdateRequest, TaskUpdateRequestStatus
+from app.models.sub_task import SubTask, SubTaskStatus, SubTaskPriority
+from app.models.sub_task_update_request import SubTaskUpdateRequest, SubTaskUpdateRequestStatus
 from app.models.task import Task, TaskStatus
 from app.models.user import User
 from app.routers.sub_tasks import (
@@ -147,7 +147,7 @@ def create_task(
                     )
             else:
                 validate_weightage_priority_total(
-                    sum(sub_task.weightage_priority for sub_task in task.sub_tasks)
+                    sum(sub_task.weightage_priority or 0 for sub_task in task.sub_tasks)
                 )
 
             for sub_task in task.sub_tasks:
@@ -158,12 +158,16 @@ def create_task(
                     current_user=current_user,
                 )
 
+                # Use defaults for priority fields if not provided
+                weightage_priority = sub_task.weightage_priority if sub_task.weightage_priority is not None else 0
+                subtask_priority = sub_task.subtask_priority.value if sub_task.subtask_priority else SubTaskPriority.medium.value
+
                 new_sub_task = SubTask(
                     title=sub_task.title,
                     description=sub_task.description,
                     status=sub_task.status.value,
-                    weightage_priority=sub_task.weightage_priority,
-                    subtask_priority=sub_task.subtask_priority.value,
+                    weightage_priority=weightage_priority,
+                    subtask_priority=subtask_priority,
                     estimated_days=sub_task.estimated_days,
                     estimated_hours=sub_task.estimated_hours,
                     start_date=sub_task.start_date,
@@ -181,6 +185,28 @@ def create_task(
                 )
                 db.add(new_sub_task)
                 created_sub_tasks.append(new_sub_task)
+
+                # If non-admin and priority fields were not provided, create approval request
+                if current_user.role != "admin" and (sub_task.weightage_priority is None or sub_task.subtask_priority is None):
+                    approval_request = SubTaskUpdateRequest(
+                        sub_task_id=new_sub_task.id,
+                        requested_by=current_user.id,
+                        status=SubTaskUpdateRequestStatus.pending.value,
+                        requested_changes={
+                            "priority_fields_pending": True,
+                            "note": "Waiting for admin to set weightage_priority and subtask_priority"
+                        },
+                    )
+                    db.add(approval_request)
+                    log_audit_event(
+                        db=db,
+                        action="CREATE",
+                        entity_type="sub_task_update_request",
+                        entity_id=new_sub_task.id,
+                        user_id=current_user.id,
+                        message="Sub-task created (nested), waiting for admin to set priority fields",
+                        details={"sub_task_id": new_sub_task.id, "title": new_sub_task.title},
+                    )
 
             recalculate_task_estimated_time(db, new_task.id)
             sync_task_completion_status(db, new_task.id)
@@ -536,7 +562,7 @@ def get_task_progress(
     completed_subtasks = (
         db.query(func.count(SubTask.id))
         .filter(SubTask.task_id == task_id)
-        .filter(SubTask.status == TaskStatus.complete.value)
+        .filter(SubTask.status == SubTaskStatus.complete.value)
         .scalar()
         or 0
     )
@@ -598,7 +624,7 @@ def get_task_timeline(
 
         expected_hours = (
             round(total_estimated_hours * weight, 2)
-            if sub_task.status == TaskStatus.complete.value
+            if sub_task.status == SubTaskStatus.complete.value
             else 0.0
         )
         total_expected_hours += expected_hours

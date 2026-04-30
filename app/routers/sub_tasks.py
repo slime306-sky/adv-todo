@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.core.audit import log_audit_event
 from app.core.errors import api_error
 from app.core.security import get_current_user, get_db, require_role
-from app.models.sub_task import SubTask, SubTaskPriority
+from app.models.sub_task import SubTask, SubTaskPriority, SubTaskStatus
 from app.models.sub_task_update_request import SubTaskUpdateRequest, SubTaskUpdateRequestStatus
 from app.models.task import Task, TaskStatus
 from app.models.user import User
@@ -168,13 +168,15 @@ def sync_task_completion_status(db: Session, task_id: int):
     completed_subtasks = (
         db.query(func.count(SubTask.id))
         .filter(SubTask.task_id == task_id)
-        .filter(SubTask.status == TaskStatus.complete.value)
+        .filter(SubTask.status == SubTaskStatus.complete.value)
         .scalar()
         or 0
     )
 
     if completed_subtasks == total_subtasks:
         task.status = TaskStatus.complete.value
+    else:
+        task.status = TaskStatus.not_complete.value
 
 
 def get_task_weightage_priority_total(db: Session, task_id: int) -> int:
@@ -243,8 +245,8 @@ def _enforce_admin_only_priority_fields(current_user: User, payload_fields: set[
 def _normalize_update_data(db: Session, sub_task: SubTask, update_data: dict):
     if "status" in update_data and update_data["status"] is not None:
         if (
-            sub_task.status == TaskStatus.complete.value
-            and update_data["status"].value != TaskStatus.complete.value
+            sub_task.status == SubTaskStatus.complete.value
+            and update_data["status"].value != SubTaskStatus.complete.value
         ):
             raise api_error(
                 status_code=400,
@@ -318,6 +320,8 @@ def _apply_sub_task_update(db: Session, sub_task: SubTask, update_data: dict):
     if old_status != TaskStatus.complete.value and sub_task.status == TaskStatus.complete.value:
         sub_task.completed_at = datetime.utcnow()
         _auto_fill_actual_time_on_completion(sub_task)
+    elif old_status == SubTaskStatus.complete.value and sub_task.status != SubTaskStatus.complete.value:
+        sub_task.completed_at = None
 
     recalculate_task_estimated_time(db, old_task_id)
     sync_task_completion_status(db, old_task_id)
@@ -332,13 +336,18 @@ def create_sub_task(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    _enforce_admin_only_priority_fields(current_user, set(sub_task.__fields_set__))
-
     task = validate_task(db, sub_task.task_id)
     ensure_user_can_manage_task(task, current_user)
 
-    projected_total = get_task_weightage_priority_total(db, sub_task.task_id) + sub_task.weightage_priority
-    validate_weightage_priority_total(projected_total)
+    # Only validate weightage priority for admins
+    if current_user.role == "admin":
+        # If admin provides priority fields, validate them
+        if sub_task.weightage_priority is not None:
+            projected_total = get_task_weightage_priority_total(db, sub_task.task_id) + sub_task.weightage_priority
+            validate_weightage_priority_total(projected_total)
+    else:
+        # Non-admin: Check if they tried to set restricted fields
+        _enforce_admin_only_priority_fields(current_user, set(sub_task.__fields_set__))
 
     assigned_user = resolve_assigned_user(
         db=db,
@@ -347,12 +356,16 @@ def create_sub_task(
         current_user=current_user,
     )
 
+    # Use defaults for priority fields if not provided by admin
+    weightage_priority = sub_task.weightage_priority if sub_task.weightage_priority is not None else 0
+    subtask_priority = sub_task.subtask_priority.value if sub_task.subtask_priority else SubTaskPriority.medium.value
+
     new_sub_task = SubTask(
         title=sub_task.title,
         description=sub_task.description,
         status=sub_task.status.value,
-        weightage_priority=sub_task.weightage_priority,
-        subtask_priority=sub_task.subtask_priority.value,
+        weightage_priority=weightage_priority,
+        subtask_priority=subtask_priority,
         estimated_days=sub_task.estimated_days,
         estimated_hours=sub_task.estimated_hours,
         start_date=sub_task.start_date,
@@ -364,9 +377,8 @@ def create_sub_task(
         assigned_to=assigned_user.id,
     )
 
-    if new_sub_task.status == TaskStatus.complete.value:
+    if new_sub_task.status == SubTaskStatus.complete.value:
         completion_time = datetime.utcnow()
-        new_sub_task.created_at = completion_time
         new_sub_task.completed_at = completion_time
         _auto_fill_actual_time_on_completion(new_sub_task)
 
@@ -375,6 +387,30 @@ def create_sub_task(
     sync_task_completion_status(db, sub_task.task_id)
     db.commit()
     db.refresh(new_sub_task)
+
+    # If non-admin and priority fields were not provided, create approval request
+    if current_user.role != "admin" and (sub_task.weightage_priority is None or sub_task.subtask_priority is None):
+        approval_request = SubTaskUpdateRequest(
+            sub_task_id=new_sub_task.id,
+            requested_by=current_user.id,
+            status=SubTaskUpdateRequestStatus.pending.value,
+            requested_changes={
+                "priority_fields_pending": True,
+                "note": "Waiting for admin to set weightage_priority and subtask_priority"
+            },
+        )
+        db.add(approval_request)
+        log_audit_event(
+            db=db,
+            action="CREATE",
+            entity_type="sub_task_update_request",
+            entity_id=new_sub_task.id,
+            user_id=current_user.id,
+            message="Sub-task created, waiting for admin to set priority fields",
+            details={"sub_task_id": new_sub_task.id, "title": new_sub_task.title},
+        )
+        db.commit()
+
     log_audit_event(
         db=db,
         action="CREATE",
