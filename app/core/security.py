@@ -89,6 +89,10 @@ def require_role(required_role: str):
                 status_code=403,
                 code="INSUFFICIENT_PERMISSIONS",
                 message="Not enough permissions",
+                details={
+                    "required_role": required_role,
+                    "current_role": user.role,
+                },
             )
         return user
 
