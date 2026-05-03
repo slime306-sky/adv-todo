@@ -215,59 +215,86 @@ def _repair_legacy_sqlite_sub_tasks_table():
             connection.execute(text("PRAGMA foreign_keys = ON"))
 
 
-def _ensure_sqlite_sub_tasks_timeline_columns():
-    if not engine.url.drivername.startswith("sqlite"):
-        return
-
+def _ensure_sub_tasks_timeline_columns():
     with engine.begin() as connection:
-        table_exists = connection.execute(
-            text(
-                "SELECT name FROM sqlite_master "
-                "WHERE type = 'table' AND name = 'sub_tasks'"
-            )
-        ).first()
+        if engine.url.drivername.startswith("sqlite"):
+            table_exists = connection.execute(
+                text(
+                    "SELECT name FROM sqlite_master "
+                    "WHERE type = 'table' AND name = 'sub_tasks'"
+                )
+            ).first()
 
-        if not table_exists:
+            if not table_exists:
+                return
+
+            existing_columns = {
+                row[1] for row in connection.execute(text("PRAGMA table_info(sub_tasks)"))
+            }
+
+            if "weightage_priority" not in existing_columns:
+                connection.execute(
+                    text("ALTER TABLE sub_tasks ADD COLUMN weightage_priority INTEGER NOT NULL DEFAULT 0")
+                )
+
+            if "non_priority_flag" not in existing_columns:
+                connection.execute(
+                    text("ALTER TABLE sub_tasks ADD COLUMN non_priority_flag BOOLEAN NOT NULL DEFAULT 0")
+                )
+
+            if "subtask_priority" not in existing_columns:
+                connection.execute(
+                    text("ALTER TABLE sub_tasks ADD COLUMN subtask_priority VARCHAR NOT NULL DEFAULT 'medium'")
+                )
+
+            if "actual_days" not in existing_columns:
+                connection.execute(
+                    text("ALTER TABLE sub_tasks ADD COLUMN actual_days INTEGER NOT NULL DEFAULT 0")
+                )
+
+            if "actual_hours" not in existing_columns:
+                connection.execute(
+                    text("ALTER TABLE sub_tasks ADD COLUMN actual_hours INTEGER NOT NULL DEFAULT 0")
+                )
+
+            if "completed_at" not in existing_columns:
+                connection.execute(text("ALTER TABLE sub_tasks ADD COLUMN completed_at DATETIME"))
+
+            if "start_date" not in existing_columns:
+                connection.execute(text("ALTER TABLE sub_tasks ADD COLUMN start_date DATETIME"))
+
+            if "end_date" not in existing_columns:
+                connection.execute(text("ALTER TABLE sub_tasks ADD COLUMN end_date DATETIME"))
+
+            connection.execute(
+                text("UPDATE sub_tasks SET start_date = created_at WHERE start_date IS NULL")
+            )
             return
 
-        existing_columns = {
-            row[1] for row in connection.execute(text("PRAGMA table_info(sub_tasks)"))
-        }
-
-        if "weightage_priority" not in existing_columns:
-            connection.execute(
-                text("ALTER TABLE sub_tasks ADD COLUMN weightage_priority INTEGER NOT NULL DEFAULT 0")
+        connection.execute(
+            text(
+                "ALTER TABLE sub_tasks ADD COLUMN IF NOT EXISTS weightage_priority INTEGER NOT NULL DEFAULT 0"
             )
-
-        if "non_priority_flag" not in existing_columns:
-            connection.execute(
-                text("ALTER TABLE sub_tasks ADD COLUMN non_priority_flag BOOLEAN NOT NULL DEFAULT 0")
+        )
+        connection.execute(
+            text(
+                "ALTER TABLE sub_tasks ADD COLUMN IF NOT EXISTS non_priority_flag BOOLEAN NOT NULL DEFAULT FALSE"
             )
-
-        if "subtask_priority" not in existing_columns:
-            connection.execute(
-                text("ALTER TABLE sub_tasks ADD COLUMN subtask_priority VARCHAR NOT NULL DEFAULT 'medium'")
+        )
+        connection.execute(
+            text(
+                "ALTER TABLE sub_tasks ADD COLUMN IF NOT EXISTS subtask_priority VARCHAR NOT NULL DEFAULT 'medium'"
             )
-
-        if "actual_days" not in existing_columns:
-            connection.execute(
-                text("ALTER TABLE sub_tasks ADD COLUMN actual_days INTEGER NOT NULL DEFAULT 0")
-            )
-
-        if "actual_hours" not in existing_columns:
-            connection.execute(
-                text("ALTER TABLE sub_tasks ADD COLUMN actual_hours INTEGER NOT NULL DEFAULT 0")
-            )
-
-        if "completed_at" not in existing_columns:
-            connection.execute(text("ALTER TABLE sub_tasks ADD COLUMN completed_at DATETIME"))
-
-        if "start_date" not in existing_columns:
-            connection.execute(text("ALTER TABLE sub_tasks ADD COLUMN start_date DATETIME"))
-
-        if "end_date" not in existing_columns:
-            connection.execute(text("ALTER TABLE sub_tasks ADD COLUMN end_date DATETIME"))
-
+        )
+        connection.execute(
+            text("ALTER TABLE sub_tasks ADD COLUMN IF NOT EXISTS actual_days INTEGER NOT NULL DEFAULT 0")
+        )
+        connection.execute(
+            text("ALTER TABLE sub_tasks ADD COLUMN IF NOT EXISTS actual_hours INTEGER NOT NULL DEFAULT 0")
+        )
+        connection.execute(text("ALTER TABLE sub_tasks ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP"))
+        connection.execute(text("ALTER TABLE sub_tasks ADD COLUMN IF NOT EXISTS start_date TIMESTAMP"))
+        connection.execute(text("ALTER TABLE sub_tasks ADD COLUMN IF NOT EXISTS end_date TIMESTAMP"))
         connection.execute(
             text("UPDATE sub_tasks SET start_date = created_at WHERE start_date IS NULL")
         )
@@ -401,7 +428,7 @@ def _initialize_database_with_retry() -> None:
             Base.metadata.create_all(bind=engine)
             _ensure_sqlite_tasks_columns()
             _repair_legacy_sqlite_sub_tasks_table()
-            _ensure_sqlite_sub_tasks_timeline_columns()
+            _ensure_sub_tasks_timeline_columns()
             _ensure_sub_tasks_assigned_to_column()
             _ensure_audit_logs_cascade_delete()
             _ensure_subtask_weightage_check()
