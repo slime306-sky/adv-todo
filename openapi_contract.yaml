@@ -228,8 +228,13 @@ paths:
   /tasks:
     post:
       tags: [tasks]
-      summary: Create task
+      summary: Create task (admins create immediately; non-admins create a creation request)
       operationId: createTask
+      description: >-
+        Admin users create tasks immediately. Non-admins submit a task creation
+        request that must be approved by an admin. When a non-admin submits
+        a task, the response is a `TaskCreationRequestResponse` describing the
+        pending approval request.
       requestBody:
         required: true
         content:
@@ -238,11 +243,13 @@ paths:
               $ref: '#/components/schemas/TaskCreate'
       responses:
         '200':
-          description: Task created
+          description: Task created or creation request created
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/TaskCreateResponse'
+                oneOf:
+                  - $ref: '#/components/schemas/TaskCreateResponse'
+                  - $ref: '#/components/schemas/TaskCreationRequestResponse'
         '400':
           $ref: '#/components/responses/Error400'
         '404':
@@ -367,6 +374,84 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TaskUpdateRequestListResponse'
+
+  /task-creation-requests/my:
+    get:
+      tags: [tasks]
+      summary: List my task creation requests
+      operationId: getMyTaskCreationRequests
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Task creation requests
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskCreationRequestListResponse'
+
+  /task-creation-requests:
+    get:
+      tags: [tasks]
+      summary: List all task creation requests (admin only)
+      operationId: getAllTaskCreationRequests
+      parameters:
+        - in: query
+          name: status
+          schema:
+            type: string
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Task creation requests
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskCreationRequestListResponse'
+
+  /task-creation-requests/{request_id}/approve:
+    put:
+      tags: [tasks]
+      summary: Approve task creation request (admin only)
+      operationId: approveTaskCreationRequest
+      parameters:
+        - $ref: '#/components/parameters/RequestIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskCreationRequestDecision'
+      responses:
+        '200':
+          description: Approved task creation request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskCreationRequestResponse'
+
+  /task-creation-requests/{request_id}/reject:
+    put:
+      tags: [tasks]
+      summary: Reject task creation request (admin only)
+      operationId: rejectTaskCreationRequest
+      parameters:
+        - $ref: '#/components/parameters/RequestIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskCreationRequestDecision'
+      responses:
+        '200':
+          description: Rejected task creation request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskCreationRequestResponse'
 
   /task-update-requests:
     get:
@@ -1488,6 +1573,64 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/TaskUpdateRequestResponse'
+        total:
+          type: integer
+        page:
+          type: integer
+        page_size:
+          type: integer
+        total_pages:
+          type: integer
+
+    TaskCreationRequestDecision:
+      type: object
+      properties:
+        comment:
+          type: string
+          nullable: true
+        approved_payload:
+          $ref: '#/components/schemas/TaskCreate'
+          nullable: true
+
+    TaskCreationRequestResponse:
+      type: object
+      required: [id, requested_by, status, requested_payload, created_at]
+      properties:
+        id:
+          type: integer
+        requested_by:
+          $ref: '#/components/schemas/UserReference'
+        status:
+          type: string
+        requested_payload:
+          type: object
+          additionalProperties: true
+        review_comment:
+          type: string
+          nullable: true
+        reviewed_by:
+          allOf:
+            - $ref: '#/components/schemas/UserReference'
+          nullable: true
+        approved_task_id:
+          type: integer
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        reviewed_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    TaskCreationRequestListResponse:
+      type: object
+      required: [items, total, page, page_size, total_pages]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/TaskCreationRequestResponse'
         total:
           type: integer
         page:

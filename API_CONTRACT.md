@@ -341,6 +341,11 @@ Important rules:
 - In nested `sub_tasks`, only admins can set `weightage_priority` and `subtask_priority`.
 - The `weightage_priority` total must sum to exactly `100` only when those values are explicitly set by an admin.
 
+Behavior differences by role:
+
+- **Admin**: task is created immediately and the response contains the created `TaskCreateResponse` (task with nested sub-tasks).
+- **Non-admin**: the request creates a task creation approval request. The API responds with a `TaskCreationRequestResponse` describing the pending request that an admin must approve before the actual task is created.
+
 Response:
 
 ```json
@@ -360,6 +365,24 @@ Response:
   "sub_tasks_created_count": 1
 }
 ```
+
+Non-admin response (task creation request):
+
+```json
+{
+  "id": 23,
+  "requested_by": {"id": 5, "name": "carol"},
+  "status": "pending",
+  "requested_payload": {"payload": {"title": "Build API", "description": "...", "sub_tasks": [...]}, "version": 1},
+  "review_comment": null,
+  "reviewed_by": null,
+  "approved_task_id": null,
+  "created_at": "2026-05-03T12:00:00Z",
+  "reviewed_at": null
+}
+```
+
+See **Task Creation Requests** below for approval endpoints and rules.
 
 ### GET /my-tasks
 
@@ -492,6 +515,61 @@ Admin-only. Approves a pending task update request and applies the change.
 ### PUT /task-update-requests/{request_id}/reject
 
 Admin-only. Rejects a pending task update request.
+
+## Task Creation Requests
+
+### GET /task-creation-requests/my
+
+Returns the current user's task creation requests (pending, approved, rejected).
+
+Query params:
+
+- `page` default `1`
+- `page_size` default `10`
+
+Response item shape (`TaskCreationRequestResponse`):
+
+```json
+{
+  "id": 23,
+  "requested_by": {"id": 5, "name": "carol"},
+  "status": "pending",
+  "requested_payload": {"payload": {"title": "Build API", "description": "...", "sub_tasks": [...]}, "version": 1},
+  "review_comment": null,
+  "reviewed_by": null,
+  "approved_task_id": null,
+  "created_at": "2026-05-03T12:00:00Z",
+  "reviewed_at": null
+}
+```
+
+### GET /task-creation-requests
+
+Admin-only. List all pending/processed task creation requests. Supports `status`, `page`, `page_size`.
+
+### PUT /task-creation-requests/{request_id}/approve
+
+Admin-only. Approves a pending task creation request and creates the real `task` row. Request body may include an optional `approved_payload` to adjust allowed fields (admins may only override sub-task priority-related fields).
+
+Request body example:
+
+```json
+{
+  "comment": "Approving and applying admin priority overrides",
+  "approved_payload": {
+    "sub_tasks": [
+      {"client_subtask_id": "c1", "weightage_priority": 60},
+      {"client_subtask_id": "c2", "weightage_priority": 40}
+    ]
+  }
+}
+```
+
+Response: the approving admin receives the `TaskCreationRequestResponse` (request updated with `approved_task_id` and `status: approved`). The created task is available via normal `GET /tasks/{id}`.
+
+### PUT /task-creation-requests/{request_id}/reject
+
+Admin-only. Rejects a pending creation request. `comment` is required for rejection.
 
 ### POST /tasks/{task_id}/revise
 
@@ -794,3 +872,4 @@ Response item shape:
 - Some delete and update routes return only a message instead of a full entity.
 - `Task.version` is exposed as a string like `1.0.0`, backed by major/minor/patch fields.
 - A revised task creates a new task row with `parent_task_id` pointing at the original task.
+ - Task creation requests store the original submitted payload in `requested_payload`. Admins approving a request may supply an `approved_payload` but may only change sub-task priority-related fields (weightage_priority, subtask_priority, non_priority_flag) — title/description and core fields cannot be overridden. When a request is approved the created task id is available in `approved_task_id` on the request.
