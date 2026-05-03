@@ -447,6 +447,8 @@ if allowed_origins == [""]:
         "http://localhost:3000",
     ]
 
+print(allowed_origins)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
