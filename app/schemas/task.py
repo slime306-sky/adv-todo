@@ -13,6 +13,7 @@ class TaskSubTaskCreate(BaseModel):
     title: str
     description: str
     status: SubTaskStatus = SubTaskStatus.not_complete
+    non_priority_flag: bool = False
     weightage_priority: Annotated[int, Field(ge=0, le=100)] | None = None
     subtask_priority: SubTaskPriority | None = None
     estimated_days: Annotated[int, Field(ge=0)] = 0
@@ -22,9 +23,11 @@ class TaskSubTaskCreate(BaseModel):
     actual_hours: Annotated[int, Field(ge=0, lt=24)] = 0
     assigned_to: int | None = None
     assigned_to_username: str | None = None
+    client_subtask_id: str | None = None
 
 
 class TaskCreate(BaseModel):
+    __payload_version__ = 1
     title: str
     description: str
     sub_tasks: list[TaskSubTaskCreate] | None = None
@@ -165,6 +168,11 @@ class TaskUpdateRequestDecision(BaseModel):
     comment: str | None = None
 
 
+class TaskCreationRequestDecision(BaseModel):
+    comment: str | None = None
+    approved_payload: TaskCreate | None = None
+
+
 class TaskUpdateRequestResponse(BaseModel):
     id: int
     task_id: int
@@ -179,6 +187,26 @@ class TaskUpdateRequestResponse(BaseModel):
 
 class TaskUpdateRequestListResponse(BaseModel):
     items: list[TaskUpdateRequestResponse]
+    total: int
+    page: int
+    page_size: int
+    total_pages: int
+
+
+class TaskCreationRequestResponse(BaseModel):
+    id: int
+    requested_by: UserReference
+    status: str
+    requested_payload: dict
+    review_comment: str | None = None
+    reviewed_by: UserReference | None = None
+    approved_task_id: int | None = None
+    created_at: datetime
+    reviewed_at: datetime | None = None
+
+
+class TaskCreationRequestListResponse(BaseModel):
+    items: list[TaskCreationRequestResponse]
     total: int
     page: int
     page_size: int

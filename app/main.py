@@ -19,6 +19,20 @@ from app.core.errors import (
 from app.core.security import is_supported_password_hash
 from app.models.user import User
 from app.routers import activities, audit_logs, auth, dashboard, departments, sub_tasks, tasks, users
+from sqlalchemy.exc import SQLAlchemyError
+
+
+def _ensure_subtask_weightage_check():
+    """Add DB-level weightage range check on Postgres."""
+    if engine.url.drivername.startswith("sqlite"):
+        return
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                text("ALTER TABLE sub_tasks ADD CONSTRAINT IF NOT EXISTS ck_subtask_weightage_range CHECK (weightage_priority >= 0 AND weightage_priority <= 100)")
+            )
+    except SQLAlchemyError:
+        pass
 
 DB_INIT_MAX_RETRIES = int(os.environ.get("DB_INIT_MAX_RETRIES", "5"))
 DB_INIT_RETRY_DELAY_SECONDS = float(os.environ.get("DB_INIT_RETRY_DELAY_SECONDS", "2"))
@@ -125,6 +139,7 @@ def _repair_legacy_sqlite_sub_tasks_table():
                         title VARCHAR NOT NULL,
                         description VARCHAR,
                         status VARCHAR,
+                        non_priority_flag BOOLEAN NOT NULL DEFAULT 0,
                         weightage_priority INTEGER NOT NULL DEFAULT 0,
                         subtask_priority VARCHAR NOT NULL DEFAULT 'medium',
                         estimated_days INTEGER,
@@ -155,6 +170,7 @@ def _repair_legacy_sqlite_sub_tasks_table():
                         title,
                         description,
                         status,
+                        non_priority_flag,
                         weightage_priority,
                         subtask_priority,
                         estimated_days,
@@ -174,6 +190,7 @@ def _repair_legacy_sqlite_sub_tasks_table():
                         title,
                         description,
                         COALESCE(status, 'not complete'),
+                        0,
                         0,
                         'medium',
                         COALESCE(estimated_days, 0),
@@ -220,6 +237,11 @@ def _ensure_sqlite_sub_tasks_timeline_columns():
         if "weightage_priority" not in existing_columns:
             connection.execute(
                 text("ALTER TABLE sub_tasks ADD COLUMN weightage_priority INTEGER NOT NULL DEFAULT 0")
+            )
+
+        if "non_priority_flag" not in existing_columns:
+            connection.execute(
+                text("ALTER TABLE sub_tasks ADD COLUMN non_priority_flag BOOLEAN NOT NULL DEFAULT 0")
             )
 
         if "subtask_priority" not in existing_columns:
@@ -382,6 +404,7 @@ def _initialize_database_with_retry() -> None:
             _ensure_sqlite_sub_tasks_timeline_columns()
             _ensure_sub_tasks_assigned_to_column()
             _ensure_audit_logs_cascade_delete()
+            _ensure_subtask_weightage_check()
             return
         except OperationalError as exc:
             last_error = exc

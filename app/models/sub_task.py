@@ -1,7 +1,7 @@
 ﻿import enum
 from datetime import datetime, timedelta
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, CheckConstraint
 from sqlalchemy.orm import relationship
 
 from app.core.database import Base
@@ -21,11 +21,15 @@ class SubTaskPriority(str, enum.Enum):
 
 class SubTask(Base):
     __tablename__ = "sub_tasks"
+    __table_args__ = (
+        CheckConstraint("weightage_priority >= 0 AND weightage_priority <= 100", name="ck_subtask_weightage_range"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     title = Column(String, nullable=False)
     description = Column(String)
     status = Column(String, default=SubTaskStatus.not_complete.value)
+    non_priority_flag = Column(Boolean, default=False, nullable=False)
     weightage_priority = Column(Integer, default=0)
     subtask_priority = Column(String, default=SubTaskPriority.medium.value)
     estimated_days = Column(Integer, default=0)

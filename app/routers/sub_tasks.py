@@ -40,6 +40,7 @@ def _serialize_sub_task(sub_task: SubTask):
         "title": sub_task.title,
         "description": sub_task.description,
         "status": sub_task.status,
+        "non_priority_flag": sub_task.non_priority_flag,
         "weightage_priority": sub_task.weightage_priority,
         "subtask_priority": sub_task.subtask_priority,
         "estimated_days": sub_task.estimated_days,
@@ -231,13 +232,13 @@ def _enforce_admin_only_priority_fields(current_user: User, payload_fields: set[
     if current_user.role == "admin":
         return
 
-    restricted_fields = {"weightage_priority", "subtask_priority"}
+    restricted_fields = {"weightage_priority", "subtask_priority", "non_priority_flag"}
     attempted_fields = sorted(restricted_fields.intersection(payload_fields))
     if attempted_fields:
         raise api_error(
             status_code=403,
             code="SUBTASK_PRIORITY_ADMIN_ONLY",
-            message="Only admins can set or update weightage_priority and subtask_priority",
+            message="Only admins can set or update weightage_priority, subtask_priority, and non_priority_flag",
             details={"restricted_fields": attempted_fields},
         )
 
@@ -341,8 +342,8 @@ def create_sub_task(
 
     # Only validate weightage priority for admins
     if current_user.role == "admin":
-        # If admin provides priority fields, validate them
-        if sub_task.weightage_priority is not None:
+        # If admin creates a priority sub-task, validate the projected total.
+        if not sub_task.non_priority_flag and sub_task.weightage_priority is not None:
             projected_total = get_task_weightage_priority_total(db, sub_task.task_id) + sub_task.weightage_priority
             validate_weightage_priority_total(projected_total)
     else:
@@ -356,14 +357,15 @@ def create_sub_task(
         current_user=current_user,
     )
 
-    # Use defaults for priority fields if not provided by admin
-    weightage_priority = sub_task.weightage_priority if sub_task.weightage_priority is not None else 0
+    # Use zero weightage for non-priority sub-tasks.
+    weightage_priority = 0 if sub_task.non_priority_flag else (sub_task.weightage_priority if sub_task.weightage_priority is not None else 0)
     subtask_priority = sub_task.subtask_priority.value if sub_task.subtask_priority else SubTaskPriority.medium.value
 
     new_sub_task = SubTask(
         title=sub_task.title,
         description=sub_task.description,
         status=sub_task.status.value,
+        non_priority_flag=sub_task.non_priority_flag,
         weightage_priority=weightage_priority,
         subtask_priority=subtask_priority,
         estimated_days=sub_task.estimated_days,
@@ -389,7 +391,7 @@ def create_sub_task(
     db.refresh(new_sub_task)
 
     # If non-admin and priority fields were not provided, create approval request
-    if current_user.role != "admin" and (sub_task.weightage_priority is None or sub_task.subtask_priority is None):
+    if current_user.role != "admin" and (not sub_task.non_priority_flag and (sub_task.weightage_priority is None or sub_task.subtask_priority is None)):
         approval_request = SubTaskUpdateRequest(
             sub_task_id=new_sub_task.id,
             requested_by=current_user.id,
