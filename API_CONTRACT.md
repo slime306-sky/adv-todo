@@ -316,6 +316,7 @@ Request body:
 {
   "title": "Build API",
   "description": "Implement backend endpoints",
+  "non_priority_flag": false,
   "sub_tasks": [
     {
       "title": "Design schema",
@@ -329,22 +330,36 @@ Request body:
       "actual_days": 0,
       "actual_hours": 0,
       "assigned_to": 2
+    },
+    {
+      "title": "Prepare notes",
+      "description": "Non-priority supporting work",
+      "status": "not complete",
+      "start_date": "2026-04-05T09:00:00Z",
+      "estimated_days": 0,
+      "estimated_hours": 2,
+      "actual_days": 0,
+      "actual_hours": 0,
+      "assigned_to": 2
     }
   ],
-  "sub_task_count": 1
+  "sub_task_count": 2
 }
 ```
 
 Important rules:
 
 - If `sub_task_count` is provided, it must match the number of `sub_tasks`.
+- `non_priority_flag` on task is optional and defaults to `false`.
+- If task-level `non_priority_flag=true`, the whole task is treated as non-priority and nested sub-tasks are stored as non-priority (`weightage_priority=0`, `subtask_priority=medium`).
 - In nested `sub_tasks`, only admins can set `weightage_priority` and `subtask_priority`.
-- The `weightage_priority` total must sum to exactly `100` only when those values are explicitly set by an admin.
+- For tasks with `non_priority_flag=false`, provided `weightage_priority` values across sub-tasks must sum to exactly `100`.
 
 Behavior differences by role:
 
 - **Admin**: task is created immediately and the response contains the created `TaskCreateResponse` (task with nested sub-tasks).
-- **Non-admin**: the request creates a task creation approval request. The API responds with a `TaskCreationRequestResponse` describing the pending request that an admin must approve before the actual task is created.
+- **Non-admin, non-priority task** (`non_priority_flag=true`): task is created immediately and the response is `TaskCreateResponse`.
+- **Non-admin, priority task** (`non_priority_flag=false`): the request creates a task creation approval request. The API responds with a `TaskCreationRequestResponse` describing the pending request that an admin must approve before the actual task is created.
 
 Response:
 
@@ -353,6 +368,7 @@ Response:
   "id": 1,
   "title": "Build API",
   "description": "Implement backend endpoints",
+  "non_priority_flag": false,
   "status": "not complete",
   "estimated_days": 1,
   "estimated_hours": 0,
@@ -479,6 +495,7 @@ Rules:
 
 - The payload must include every sub-task exactly once.
 - `weightage_priority` values must sum to exactly `100`.
+- For task-level `non_priority_flag=true`, set all sub-task weights to `0`.
 
 If a non-admin tries to set or update `weightage_priority` or `subtask_priority`, the API returns `403` with code `SUBTASK_PRIORITY_ADMIN_ONLY`.
 
@@ -494,11 +511,20 @@ Request body:
 {
   "title": "Revised title",
   "description": "Updated description",
+  "non_priority_flag": true,
   "status": "in progress"
 }
 ```
 
 If the task is already complete, a status change that reopens it is still rejected.
+
+If `non_priority_flag=true` is applied at task level, sub-tasks under that task are normalized to non-priority (`weightage_priority=0`, `subtask_priority=medium`).
+
+Role behavior for updates:
+
+- **Admin**: update is applied immediately.
+- **Non-admin, effective non-priority task** (`task.non_priority_flag` already true or updated to true): update is applied immediately.
+- **Non-admin, priority task**: update creates a pending `task_update_request` for admin approval.
 
 ### GET /task-update-requests/my
 
@@ -602,7 +628,7 @@ Both `admin` and `user` roles can create sub-tasks when they are authorized for 
 **Input fields:**
 - `weightage_priority`: (0-100) Distribution weight for effort allocation. Must sum to exactly 100 across all sub-tasks in a task. Admin-only field.
 - `subtask_priority`: (critical|high|medium|low) Priority level for urgency/importance. Admin-only field.
-- Non-admin users should omit these two fields from create payloads.
+- Non-admin users should omit `weightage_priority` and `subtask_priority` from create payloads.
 
 Request body:
 
@@ -675,10 +701,11 @@ Both `admin` and `user` roles can update sub-tasks when they are authorized for 
 Behavior:
 
 - Admins update the sub-task immediately.
-- Non-admins create a pending approval request instead of applying the update.
+- Non-admins create a pending approval request for priority sub-task updates.
+- If the target task has `non_priority_flag=true`, updates are applied directly (no sub-task priority approval request).
 - Only admins can update `weightage_priority` and `subtask_priority`.
 - Completed sub-tasks cannot be reopened.
-- Reassigned or re-weighted updates must still keep task-level `weightage_priority` totals at exactly `100`.
+- Reassigned or re-weighted updates must keep task-level `weightage_priority` totals at `100` when priority sub-tasks exist.
 - When `start_date`, `estimated_days`, or `estimated_hours` are updated, `end_date` is automatically recalculated.
 
 **Input fields (all optional):**
@@ -872,4 +899,4 @@ Response item shape:
 - Some delete and update routes return only a message instead of a full entity.
 - `Task.version` is exposed as a string like `1.0.0`, backed by major/minor/patch fields.
 - A revised task creates a new task row with `parent_task_id` pointing at the original task.
- - Task creation requests store the original submitted payload in `requested_payload`. Admins approving a request may supply an `approved_payload` but may only change sub-task priority-related fields (weightage_priority, subtask_priority, non_priority_flag) — title/description and core fields cannot be overridden. When a request is approved the created task id is available in `approved_task_id` on the request.
+ - Task creation requests store the original submitted payload in `requested_payload`. Admins approving a request may supply an `approved_payload` but may only change task/sub-task priority-related fields (`non_priority_flag` on task, and `weightage_priority`/`subtask_priority` inside sub_tasks) — title/description and core fields cannot be overridden. When a request is approved the created task id is available in `approved_task_id` on the request.

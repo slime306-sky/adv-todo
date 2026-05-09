@@ -13,7 +13,6 @@ class TaskSubTaskCreate(BaseModel):
     title: str
     description: str
     status: SubTaskStatus = SubTaskStatus.not_complete
-    non_priority_flag: bool = False
     weightage_priority: Annotated[int, Field(ge=0, le=100)] | None = None
     subtask_priority: SubTaskPriority | None = None
     estimated_days: Annotated[int, Field(ge=0)] = 0
@@ -30,6 +29,7 @@ class TaskCreate(BaseModel):
     __payload_version__ = 1
     title: str
     description: str
+    non_priority_flag: bool = False
     sub_tasks: list[TaskSubTaskCreate] | None = None
     sub_task_count: Annotated[int, Field(ge=0)] | None = None
 
@@ -51,6 +51,7 @@ class TaskResponse(BaseModel):
     id: int
     title: str
     description: str
+    non_priority_flag: bool
     status: TaskStatus
     estimated_days: int
     estimated_hours: int
@@ -77,6 +78,7 @@ class TaskAdminResponse(BaseModel):
     id: int
     title: str
     description: str
+    non_priority_flag: bool
     status: TaskStatus
     estimated_days: int
     estimated_hours: int
@@ -157,6 +159,7 @@ class TaskPriorityBulkUpdateResponse(BaseModel):
 class TaskUpdate(BaseModel):
     title: str | None = None
     description: str | None = None
+    non_priority_flag: bool | None = None
     status: TaskStatus | None = None
 
 

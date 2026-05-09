@@ -74,6 +74,11 @@ def _ensure_sqlite_tasks_columns():
                 connection.execute(
                     text("ALTER TABLE tasks ADD COLUMN end_date DATETIME")
                 )
+
+            if "non_priority_flag" not in existing_columns:
+                connection.execute(
+                    text("ALTER TABLE tasks ADD COLUMN non_priority_flag BOOLEAN NOT NULL DEFAULT 0")
+                )
             return
 
         # PostgreSQL and other backends that support IF NOT EXISTS.
@@ -103,6 +108,9 @@ def _ensure_sqlite_tasks_columns():
         )
         connection.execute(
             text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS end_date TIMESTAMP")
+        )
+        connection.execute(
+            text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS non_priority_flag BOOLEAN NOT NULL DEFAULT FALSE")
         )
 
 

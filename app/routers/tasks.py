@@ -64,7 +64,6 @@ def _serialize_sub_task(sub_task: SubTask):
         "title": sub_task.title,
         "description": sub_task.description,
         "status": sub_task.status,
-        "non_priority_flag": sub_task.non_priority_flag,
         "weightage_priority": sub_task.weightage_priority,
         "subtask_priority": sub_task.subtask_priority,
         "estimated_days": sub_task.estimated_days,
@@ -90,6 +89,7 @@ def _serialize_task(task: Task, include_sub_tasks: bool = False):
         "id": task.id,
         "title": task.title,
         "description": task.description,
+        "non_priority_flag": task.non_priority_flag,
         "status": task.status,
         "estimated_days": task.estimated_days,
         "estimated_hours": task.estimated_hours,
@@ -139,7 +139,7 @@ def _enforce_admin_only_task_fields(current_user: User, task: TaskCreate):
     if current_user.role == "admin":
         return
 
-    restricted_task_fields = {"weightage_priority", "subtask_priority", "non_priority_flag"}
+    restricted_task_fields = {"weightage_priority", "subtask_priority"}
 
     # Check nested subtasks
     if task.sub_tasks:
@@ -151,48 +151,9 @@ def _enforce_admin_only_task_fields(current_user: User, task: TaskCreate):
                 raise api_error(
                     status_code=403,
                     code="TASK_PRIORITY_ADMIN_ONLY",
-                    message="Only admins can set weightage_priority, subtask_priority, and non_priority_flag in sub-tasks",
+                    message="Only admins can set weightage_priority and subtask_priority in sub-tasks",
                     details={"sub_task_index": idx, "restricted_fields": attempted_fields},
                 )
-
-
-def _validate_priority_sub_tasks_ready_for_creation(task: TaskCreate):
-    """Validate weightage before creation."""
-    if not task.sub_tasks:
-        return
-
-    missing_weightage = []
-    invalid_weightage = []
-
-    for idx, sub_task in enumerate(task.sub_tasks):
-        if not sub_task.non_priority_flag:
-            if sub_task.weightage_priority is None:
-                missing_weightage.append(idx)
-            elif not isinstance(sub_task.weightage_priority, (int, float)) or sub_task.weightage_priority < 0:
-                invalid_weightage.append({"index": idx, "value": sub_task.weightage_priority})
-
-    if missing_weightage:
-        raise api_error(
-            status_code=400,
-            code="MISSING_SUBTASK_WEIGHTAGE_PRIORITY",
-            message="Admin must set explicit weightage_priority for all priority sub-tasks (cannot default)",
-            details={"sub_task_indices": missing_weightage},
-        )
-
-    if invalid_weightage:
-        raise api_error(
-            status_code=400,
-            code="INVALID_SUBTASK_WEIGHTAGE_PRIORITY",
-            message="Weightage priority must be non-negative number",
-            details={"invalid_weightages": invalid_weightage},
-        )
-    has_priority = any(not getattr(st, "non_priority_flag", False) for st in task.sub_tasks)
-    if not has_priority:
-        raise api_error(
-            status_code=400,
-            code="NO_PRIORITY_SUBTASKS",
-            message="Provide at least one priority sub-task with weightage_priority",
-        )
 
 
 def _validate_approved_payload_safe_override(original_task: TaskCreate, override_task: TaskCreate | None) -> dict:
@@ -211,15 +172,15 @@ def _validate_approved_payload_safe_override(original_task: TaskCreate, override
             details={"provided_version": payload_version, "supported_version": getattr(TaskCreate, "__payload_version__", 1)},
         )
 
-    # Top-level whitelist: only `sub_tasks` may be provided in an override
+    # Top-level whitelist: only non-priority and sub-task priority-related fields may be overridden
     provided_top_level = getattr(override_task, "model_fields_set", set())
-    allowed_top_level = {"sub_tasks"}
+    allowed_top_level = {"sub_tasks", "non_priority_flag"}
     extra_top = provided_top_level.difference(allowed_top_level)
     if extra_top:
         raise api_error(
             status_code=400,
             code="INVALID_OVERRIDE_TOP_LEVEL_FIELDS",
-            message="Override may only include sub_tasks",
+            message="Override may only include sub_tasks and non_priority_flag",
             details={"invalid_fields": sorted(list(extra_top))},
         )
 
@@ -236,6 +197,12 @@ def _validate_approved_payload_safe_override(original_task: TaskCreate, override
             code="INVALID_OVERRIDE_FIELD",
             message="Admin can only override sub_tasks priority fields, not task description",
         )
+
+    if override_task.non_priority_flag != original_task.non_priority_flag:
+        changes["non_priority_flag"] = {
+            "from": original_task.non_priority_flag,
+            "to": override_task.non_priority_flag,
+        }
 
     if override_task.sub_tasks is None and original_task.sub_tasks is not None:
         raise api_error(
@@ -299,7 +266,7 @@ def _validate_approved_payload_safe_override(original_task: TaskCreate, override
 
             # Per-subtask whitelist of allowed override fields
             provided_fields = getattr(override_st, "model_fields_set", set())
-            allowed_fields = {"weightage_priority", "subtask_priority", "non_priority_flag"}
+            allowed_fields = {"weightage_priority", "subtask_priority"}
             extra = set(provided_fields) - allowed_fields
             if extra:
                 raise api_error(
@@ -321,11 +288,6 @@ def _validate_approved_payload_safe_override(original_task: TaskCreate, override
                     "from": getattr(orig_st, "subtask_priority", None),
                     "to": getattr(override_st, "subtask_priority", None),
                 }
-            if getattr(override_st, "non_priority_flag", None) != getattr(orig_st, "non_priority_flag", None):
-                st_changes["non_priority_flag"] = {
-                    "from": getattr(orig_st, "non_priority_flag", None),
-                    "to": getattr(override_st, "non_priority_flag", None),
-                }
             if st_changes:
                 subtask_changes.append({"index": orig_idx, "changes": st_changes})
 
@@ -342,11 +304,10 @@ def _create_task_from_payload(
     creator_id: int,
     current_user: User,
 ):
-    _validate_priority_sub_tasks_ready_for_creation(task)
-
     new_task = Task(
         title=task.title,
         description=task.description,
+        non_priority_flag=task.non_priority_flag,
         created_by=creator_id,
     )
 
@@ -355,10 +316,13 @@ def _create_task_from_payload(
     db.flush()
 
     if task.sub_tasks:
-        priority_sub_tasks = [sub_task for sub_task in task.sub_tasks if not sub_task.non_priority_flag]
-        if priority_sub_tasks:
-            # All weightage_priority values must be explicit (checked earlier); sum without fallback
-            validate_weightage_priority_total(sum(sub_task.weightage_priority for sub_task in priority_sub_tasks))
+        provided_priorities = [
+            sub_task.weightage_priority
+            for sub_task in task.sub_tasks
+            if not task.non_priority_flag and sub_task.weightage_priority is not None
+        ]
+        if provided_priorities:
+            validate_weightage_priority_total(sum(provided_priorities))
 
         for sub_task in task.sub_tasks:
             assigned_user = resolve_assigned_user(
@@ -368,22 +332,30 @@ def _create_task_from_payload(
                 current_user=current_user,
             )
 
-            if not sub_task.non_priority_flag and sub_task.weightage_priority is None:
+            effective_non_priority_flag = task.non_priority_flag
+
+            if not effective_non_priority_flag and (
+                sub_task.weightage_priority is None or sub_task.subtask_priority is None
+            ):
                 raise api_error(
                     status_code=400,
-                    code="MISSING_PRIORITY_SUBTASK_WEIGHTAGE",
-                    message="Priority subtask must have explicit weightage_priority, cannot default to 0",
+                    code="MISSING_PRIORITY_SUBTASK_FIELDS",
+                    message="Priority sub-task must include weightage_priority and subtask_priority",
                     details={"title": sub_task.title},
                 )
 
-            weightage_priority = 0 if sub_task.non_priority_flag else sub_task.weightage_priority
-            subtask_priority = sub_task.subtask_priority.value if sub_task.subtask_priority else SubTaskPriority.medium.value
+            weightage_priority = 0 if effective_non_priority_flag else sub_task.weightage_priority
+            subtask_priority = (
+                SubTaskPriority.medium.value
+                if effective_non_priority_flag
+                else sub_task.subtask_priority.value
+            )
 
             new_sub_task = SubTask(
                 title=sub_task.title,
                 description=sub_task.description,
                 status=sub_task.status.value,
-                non_priority_flag=sub_task.non_priority_flag,
+                non_priority_flag=task.non_priority_flag,
                 weightage_priority=weightage_priority,
                 subtask_priority=subtask_priority,
                 estimated_days=sub_task.estimated_days,
@@ -420,6 +392,52 @@ def create_task(
     if current_user.role != "admin":
         # Validate that non-admins don't try to set restricted priority fields
         _enforce_admin_only_task_fields(current_user, task)
+
+        # Non-admin can create directly when the whole task is non-priority.
+        if task.non_priority_flag:
+            try:
+                new_task, created_sub_tasks = _create_task_from_payload(
+                    db,
+                    task,
+                    creator_id=current_user.id,
+                    current_user=current_user,
+                )
+                db.commit()
+            except HTTPException:
+                db.rollback()
+                raise
+            except Exception as exc:
+                db.rollback()
+                raise api_error(
+                    status_code=500,
+                    code="TRANSACTION_FAILED",
+                    message="Failed to create task with subtasks",
+                    dev_message=str(exc),
+                )
+
+            db.refresh(new_task)
+            for sub_task in created_sub_tasks:
+                db.refresh(sub_task)
+
+            log_audit_event(
+                db=db,
+                action="CREATE",
+                entity_type="task",
+                entity_id=new_task.id,
+                user_id=current_user.id,
+                message="Task created",
+                details={
+                    "title": new_task.title,
+                    "sub_tasks_count": len(created_sub_tasks),
+                    "non_priority_flag": True,
+                },
+            )
+            db.commit()
+            return {
+                **_serialize_task(new_task, include_sub_tasks=True),
+                "sub_tasks": [_serialize_sub_task(sub_task) for sub_task in created_sub_tasks],
+                "sub_tasks_created_count": len(created_sub_tasks),
+            }
 
         # Store payload with explicit version wrapper and fingerprints
         payload_wrapper = jsonable_encoder(task)
@@ -910,7 +928,7 @@ def get_all_task_update_requests(
     }
 
 
-def _apply_task_update(task: Task, update_data: dict):
+def _apply_task_update(db: Session, task: Task, update_data: dict):
     if "status" in update_data and update_data["status"] is not None:
         if task.status == TaskStatus.complete.value and update_data["status"].value != TaskStatus.complete.value:
             raise api_error(
@@ -922,6 +940,16 @@ def _apply_task_update(task: Task, update_data: dict):
 
     for key, value in update_data.items():
         setattr(task, key, value)
+
+    if update_data.get("non_priority_flag") is True:
+        db.query(SubTask).filter(SubTask.task_id == task.id).update(
+            {
+                SubTask.non_priority_flag: True,
+                SubTask.weightage_priority: 0,
+                SubTask.subtask_priority: SubTaskPriority.medium.value,
+            },
+            synchronize_session=False,
+        )
 
 
 @router.put("/task-update-requests/{request_id}/approve", response_model=TaskUpdateRequestResponse)
@@ -1034,13 +1062,16 @@ def get_all_tasks_admin(
     )
 
     result = []
+    valid_statuses = {status.value for status in TaskStatus}
     for task in tasks:
+        safe_status = task.status if task.status in valid_statuses else TaskStatus.not_complete.value
         result.append(
             {
                 "id": task.id,
                 "title": task.title,
                 "description": task.description,
-                "status": task.status,
+                "non_priority_flag": task.non_priority_flag,
+                "status": safe_status,
                 "estimated_days": task.estimated_days,
                 "estimated_hours": task.estimated_hours,
                 "start_date": task.start_date,
@@ -1333,7 +1364,24 @@ def update_task(
             message="Provide at least one field to update",
         )
 
+    effective_non_priority_flag = update_data.get("non_priority_flag", task.non_priority_flag)
+
     if current_user.role != "admin":
+        if effective_non_priority_flag:
+            _apply_task_update(db, task, update_data)
+            log_audit_event(
+                db=db,
+                action="UPDATE",
+                entity_type="task",
+                entity_id=task.id,
+                user_id=current_user.id,
+                message="Task updated",
+                details={"updated_fields": list(update_data.keys()), "non_priority_flag": True},
+            )
+            db.commit()
+            db.refresh(task)
+            return _serialize_task(task)
+
         pending_request = (
             db.query(TaskUpdateRequest)
             .filter(TaskUpdateRequest.task_id == task.id)
@@ -1380,7 +1428,7 @@ def update_task(
         db.refresh(request)
         return _serialize_task(task)
 
-    _apply_task_update(task, update_data)
+    _apply_task_update(db, task, update_data)
 
     log_audit_event(
         db=db,
@@ -1488,6 +1536,15 @@ def delete_task(
         message="Task deleted",
         details={"title": task.title},
     )
+
+    sub_task_ids = [sub_task.id for sub_task in db.query(SubTask.id).filter(SubTask.task_id == task.id).all()]
+    if sub_task_ids:
+        db.query(SubTaskUpdateRequest).filter(
+            SubTaskUpdateRequest.sub_task_id.in_(sub_task_ids)
+        ).delete(synchronize_session=False)
+
+    db.query(SubTask).filter(SubTask.task_id == task.id).delete(synchronize_session=False)
+    db.query(TaskUpdateRequest).filter(TaskUpdateRequest.task_id == task.id).delete(synchronize_session=False)
     db.delete(task)
     db.commit()
 

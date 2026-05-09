@@ -1,6 +1,6 @@
 ﻿import enum
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String
 from sqlalchemy.orm import relationship
 
 from app.core.database import Base
@@ -19,6 +19,7 @@ class Task(Base):
     id = Column(Integer, primary_key=True, index=True)
     title = Column(String, nullable=False)
     description = Column(String)
+    non_priority_flag = Column(Boolean, default=False, nullable=False)
     status = Column(String, default=TaskStatus.not_complete.value)
     estimated_days = Column(Integer, default=0)
     estimated_hours = Column(Integer, default=0)

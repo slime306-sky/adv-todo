@@ -40,7 +40,6 @@ def _serialize_sub_task(sub_task: SubTask):
         "title": sub_task.title,
         "description": sub_task.description,
         "status": sub_task.status,
-        "non_priority_flag": sub_task.non_priority_flag,
         "weightage_priority": sub_task.weightage_priority,
         "subtask_priority": sub_task.subtask_priority,
         "estimated_days": sub_task.estimated_days,
@@ -232,13 +231,13 @@ def _enforce_admin_only_priority_fields(current_user: User, payload_fields: set[
     if current_user.role == "admin":
         return
 
-    restricted_fields = {"weightage_priority", "subtask_priority", "non_priority_flag"}
+    restricted_fields = {"weightage_priority", "subtask_priority"}
     attempted_fields = sorted(restricted_fields.intersection(payload_fields))
     if attempted_fields:
         raise api_error(
             status_code=403,
             code="SUBTASK_PRIORITY_ADMIN_ONLY",
-            message="Only admins can set or update weightage_priority, subtask_priority, and non_priority_flag",
+            message="Only admins can set or update weightage_priority and subtask_priority",
             details={"restricted_fields": attempted_fields},
         )
 
@@ -287,20 +286,33 @@ def _validate_sub_task_update_constraints(db: Session, sub_task: SubTask, update
     new_task_id = update_data.get("task_id", old_task_id)
     new_weightage_priority = update_data.get("weightage_priority", sub_task.weightage_priority)
 
-    validate_task(db, new_task_id)
+    old_task = validate_task(db, old_task_id)
+    new_task = validate_task(db, new_task_id)
 
-    old_task_projected_total = get_task_weightage_priority_total(db, old_task_id) - sub_task.weightage_priority
-    old_task_remaining_count = (
-        db.query(func.count(SubTask.id)).filter(SubTask.task_id == old_task_id).scalar() or 0
-    ) - 1
+    if not old_task.non_priority_flag:
+        old_task_remaining_sub_tasks = (
+            db.query(SubTask)
+            .filter(SubTask.task_id == old_task_id)
+            .filter(SubTask.id != sub_task.id)
+            .all()
+        )
+        old_task_projected_total = sum(item.weightage_priority for item in old_task_remaining_sub_tasks)
 
-    if new_task_id == old_task_id:
-        old_task_projected_total += new_weightage_priority
-        validate_weightage_priority_total(old_task_projected_total)
-    else:
-        if old_task_remaining_count > 0:
+        if new_task_id == old_task_id:
+            if not new_task.non_priority_flag:
+                old_task_projected_total += new_weightage_priority
+            if old_task_remaining_sub_tasks:
+                validate_weightage_priority_total(old_task_projected_total)
+        elif old_task_remaining_sub_tasks:
             validate_weightage_priority_total(old_task_projected_total)
-        new_task_projected_total = get_task_weightage_priority_total(db, new_task_id) + new_weightage_priority
+
+    if new_task_id != old_task_id and not new_task.non_priority_flag:
+        new_task_existing_sub_tasks = (
+            db.query(SubTask)
+            .filter(SubTask.task_id == new_task_id)
+            .all()
+        )
+        new_task_projected_total = sum(item.weightage_priority for item in new_task_existing_sub_tasks) + new_weightage_priority
         validate_weightage_priority_total(new_task_projected_total)
 
 
@@ -339,11 +351,11 @@ def create_sub_task(
 ):
     task = validate_task(db, sub_task.task_id)
     ensure_user_can_manage_task(task, current_user)
+    task_non_priority_flag = task.non_priority_flag
 
     # Only validate weightage priority for admins
     if current_user.role == "admin":
-        # If admin creates a priority sub-task, validate the projected total.
-        if not sub_task.non_priority_flag and sub_task.weightage_priority is not None:
+        if not task_non_priority_flag and sub_task.weightage_priority is not None:
             projected_total = get_task_weightage_priority_total(db, sub_task.task_id) + sub_task.weightage_priority
             validate_weightage_priority_total(projected_total)
     else:
@@ -357,15 +369,34 @@ def create_sub_task(
         current_user=current_user,
     )
 
-    # Use zero weightage for non-priority sub-tasks.
-    weightage_priority = 0 if sub_task.non_priority_flag else (sub_task.weightage_priority if sub_task.weightage_priority is not None else 0)
-    subtask_priority = sub_task.subtask_priority.value if sub_task.subtask_priority else SubTaskPriority.medium.value
+    needs_priority_approval = False
+    if not task_non_priority_flag and (
+        sub_task.weightage_priority is None or sub_task.subtask_priority is None
+    ):
+        if current_user.role == "admin":
+            raise api_error(
+                status_code=400,
+                code="MISSING_PRIORITY_SUBTASK_FIELDS",
+                message="Priority sub-task must include weightage_priority and subtask_priority",
+            )
+        needs_priority_approval = True
+
+    weightage_priority = (
+        0
+        if task_non_priority_flag or sub_task.weightage_priority is None
+        else sub_task.weightage_priority
+    )
+    subtask_priority = (
+        SubTaskPriority.medium.value
+        if task_non_priority_flag or sub_task.subtask_priority is None
+        else sub_task.subtask_priority.value
+    )
 
     new_sub_task = SubTask(
         title=sub_task.title,
         description=sub_task.description,
         status=sub_task.status.value,
-        non_priority_flag=sub_task.non_priority_flag,
+        non_priority_flag=task_non_priority_flag,
         weightage_priority=weightage_priority,
         subtask_priority=subtask_priority,
         estimated_days=sub_task.estimated_days,
@@ -390,8 +421,8 @@ def create_sub_task(
     db.commit()
     db.refresh(new_sub_task)
 
-    # If non-admin and priority fields were not provided, create approval request
-    if current_user.role != "admin" and (not sub_task.non_priority_flag and (sub_task.weightage_priority is None or sub_task.subtask_priority is None)):
+    # If non-admin and admin-only fields were not provided, create approval request
+    if current_user.role != "admin" and needs_priority_approval:
         approval_request = SubTaskUpdateRequest(
             sub_task_id=new_sub_task.id,
             requested_by=current_user.id,
@@ -530,9 +561,15 @@ def update_sub_task(
     _enforce_admin_only_priority_fields(current_user, set(update_data.keys()))
 
     _normalize_update_data(db, sub_task, update_data)
+    target_task_id = update_data.get("task_id", sub_task.task_id)
+    target_task = validate_task(db, target_task_id)
+    if target_task.non_priority_flag:
+        update_data["weightage_priority"] = 0
+        update_data["subtask_priority"] = SubTaskPriority.medium.value
+
     _validate_sub_task_update_constraints(db, sub_task, update_data)
 
-    if current_user.role != "admin":
+    if current_user.role != "admin" and not target_task.non_priority_flag:
         pending_request = (
             db.query(SubTaskUpdateRequest)
             .filter(SubTaskUpdateRequest.sub_task_id == sub_task.id)
@@ -674,6 +711,12 @@ def approve_sub_task_update_request(
 
     update_data = dict(request.requested_changes or {})
     _normalize_update_data(db, sub_task, update_data)
+    target_task_id = update_data.get("task_id", sub_task.task_id)
+    target_task = validate_task(db, target_task_id)
+    if target_task.non_priority_flag:
+        update_data["weightage_priority"] = 0
+        update_data["subtask_priority"] = SubTaskPriority.medium.value
+
     _validate_sub_task_update_constraints(db, sub_task, update_data)
     _apply_sub_task_update(db, sub_task, update_data)
 
@@ -756,11 +799,14 @@ def delete_sub_task(
         raise api_error(status_code=404, code="TASK_NOT_FOUND", message="Task not found")
     ensure_user_can_manage_task(task, current_user)
 
-    remaining_sub_task_count = (
-        db.query(func.count(SubTask.id)).filter(SubTask.task_id == sub_task.task_id).scalar() or 0
-    ) - 1
-    if remaining_sub_task_count > 0:
-        projected_total = get_task_weightage_priority_total(db, sub_task.task_id) - sub_task.weightage_priority
+    remaining_priority_sub_tasks = (
+        db.query(SubTask)
+        .filter(SubTask.task_id == sub_task.task_id)
+        .filter(SubTask.id != sub_task.id)
+        .all()
+    )
+    if remaining_priority_sub_tasks and not task.non_priority_flag:
+        projected_total = sum(item.weightage_priority for item in remaining_priority_sub_tasks)
         validate_weightage_priority_total(projected_total)
 
     task_id = sub_task.task_id
@@ -773,7 +819,11 @@ def delete_sub_task(
         message="Sub task deleted",
         details={"task_id": sub_task.task_id, "title": sub_task.title},
     )
-    db.delete(sub_task)
+
+    db.query(SubTaskUpdateRequest).filter(
+        SubTaskUpdateRequest.sub_task_id == sub_task.id
+    ).delete(synchronize_session=False)
+    db.query(SubTask).filter(SubTask.id == sub_task.id).delete(synchronize_session=False)
     recalculate_task_estimated_time(db, task_id)
     sync_task_completion_status(db, task_id)
     db.commit()
