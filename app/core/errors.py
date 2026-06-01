@@ -88,6 +88,18 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
     return JSONResponse(status_code=exc.status_code, content=payload)
 
 
+def _serialize_pydantic_errors(errors: list) -> list:
+    """Convert Pydantic validation errors to JSON-serializable format, handling bytes."""
+    serializable_errors = []
+    for error in errors:
+        error_dict = dict(error)
+        # Convert bytes to string in the 'input' field
+        if isinstance(error_dict.get("input"), bytes):
+            error_dict["input"] = error_dict["input"].decode("utf-8", errors="replace")
+        serializable_errors.append(error_dict)
+    return serializable_errors
+
+
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     payload = _build_error_payload(
         request=request,
@@ -95,7 +107,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         message="Validation failed",
         code="VALIDATION_ERROR",
         dev_message="One or more request fields are invalid",
-        details=exc.errors(),
+        details=_serialize_pydantic_errors(exc.errors()),
     )
     return JSONResponse(status_code=422, content=payload)
 
