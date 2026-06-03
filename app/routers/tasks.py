@@ -1,4 +1,5 @@
 ﻿from datetime import datetime, timedelta
+import uuid
 
 from fastapi import APIRouter, Depends, Query
 from fastapi import HTTPException
@@ -223,12 +224,12 @@ def _validate_approved_payload_safe_override(original_task: TaskCreate, override
         orig_map: dict[str, list[int]] = {}
 
         # If the original TaskCreate has stored fingerprints, prefer them
-        stored_client_ids = getattr(original_task, "_stored_subtask_client_ids", None)
+        stored_temp_ids = getattr(original_task, "_stored_subtask_temporary_ids", None)
         stored_fps = getattr(original_task, "_stored_subtask_fingerprints", None)
 
         # Prefer client id mapping if present
-        if stored_client_ids and isinstance(stored_client_ids, list) and len(stored_client_ids) == len(original_task.sub_tasks):
-            for idx, cid in enumerate(stored_client_ids):
+        if stored_temp_ids and isinstance(stored_temp_ids, list) and len(stored_temp_ids) == len(original_task.sub_tasks):
+            for idx, cid in enumerate(stored_temp_ids):
                 if cid is not None:
                     orig_map.setdefault(f"client:{cid}", []).append(idx)
 
@@ -450,18 +451,26 @@ def create_task(
             return f"{str(title).strip().lower()}|{str(desc).strip().lower()}|{str(days)}|{str(hours)}|{str(assignee).strip().lower()}"
 
         subtask_fps = []
-        subtask_client_ids = []
+        subtask_temp_ids = []
         if getattr(task, "sub_tasks", None):
             for st in task.sub_tasks:
                 subtask_fps.append(_fingerprint_obj(st))
-                subtask_client_ids.append(getattr(st, "client_subtask_id", None))
+                cid = getattr(st, "client_subtask_id", None)
+                if cid is None:
+                    cid = uuid.uuid4().hex
+                    try:
+                        setattr(st, "client_subtask_id", cid)
+                    except Exception:
+                        # best-effort: pydantic model should allow setting, but ignore if not
+                        pass
+                subtask_temp_ids.append(cid)
 
         if isinstance(payload_wrapper, dict):
             payload_wrapper = {
                 "payload": payload_wrapper,
                 "version": getattr(TaskCreate, "__payload_version__", 1),
                 "subtask_fingerprints": subtask_fps,
-                "subtask_client_ids": subtask_client_ids,
+                "subtask_temporary_ids": subtask_temp_ids,
             }
 
         creation_request = TaskCreationRequest(
@@ -646,8 +655,8 @@ def approve_task_creation_request(
                 if isinstance(stored, dict):
                     if "subtask_fingerprints" in stored:
                         setattr(original_task, "_stored_subtask_fingerprints", stored.get("subtask_fingerprints"))
-                    if "subtask_client_ids" in stored:
-                        setattr(original_task, "_stored_subtask_client_ids", stored.get("subtask_client_ids"))
+                    if "subtask_temporary_ids" in stored:
+                        setattr(original_task, "_stored_subtask_temporary_ids", stored.get("subtask_temporary_ids"))
                 # enforce stored payload version compatibility
                 stored_version = stored.get("version", 1) if isinstance(stored, dict) else 1
                 if stored_version > getattr(TaskCreate, "__payload_version__", 1):

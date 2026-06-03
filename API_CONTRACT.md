@@ -389,7 +389,7 @@ Non-admin response (task creation request):
   "id": 23,
   "requested_by": {"id": 5, "name": "carol"},
   "status": "pending",
-  "requested_payload": {"payload": {"title": "Build API", "description": "...", "sub_tasks": [...]}, "version": 1},
+  "requested_payload": {"payload": {"title": "Build API", "description": "...", "sub_tasks": [...]}, "version": 1, "subtask_temporary_ids": ["c1","c2"]},
   "review_comment": null,
   "reviewed_by": null,
   "approved_task_id": null,
@@ -560,7 +560,7 @@ Response item shape (`TaskCreationRequestResponse`):
   "id": 23,
   "requested_by": {"id": 5, "name": "carol"},
   "status": "pending",
-  "requested_payload": {"payload": {"title": "Build API", "description": "...", "sub_tasks": [...]}, "version": 1},
+  "requested_payload": {"payload": {"title": "Build API", "description": "...", "sub_tasks": [...]}, "version": 1, "subtask_temporary_ids": ["c1","c2"]},
   "review_comment": null,
   "reviewed_by": null,
   "approved_task_id": null,
@@ -583,10 +583,14 @@ Request body example:
 {
   "comment": "Approving and applying admin priority overrides",
   "approved_payload": {
-    "sub_tasks": [
+      "sub_tasks": [
       {"client_subtask_id": "c1", "weightage_priority": 60},
       {"client_subtask_id": "c2", "weightage_priority": 40}
-    ]
+    ],
+    "subtask_temporary_ids": ["c1", "c2"]
+  }
+
+Note: Admins approve by referencing `client_subtask_id` values that identify the original requested sub-tasks. Clients may include `client_subtask_id` on each nested sub-task; if the client omits these IDs the server will generate stable temporary IDs when storing the creation request and place them in the stored wrapper under `subtask_temporary_ids`. Admins should use whichever IDs appear in `requested_payload.subtask_temporary_ids` (if present) or the client's provided `client_subtask_id` values when building `approved_payload`.
   }
 }
 ```
