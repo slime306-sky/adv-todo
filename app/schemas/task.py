@@ -10,6 +10,8 @@ from app.schemas.user import UserReference
 
 
 class TaskSubTaskCreate(BaseModel):
+    model_config = {"populate_by_name": True}
+
     title: str
     description: str
     status: SubTaskStatus = SubTaskStatus.not_complete
@@ -22,7 +24,7 @@ class TaskSubTaskCreate(BaseModel):
     actual_hours: Annotated[int, Field(ge=0, lt=24)] = 0
     assigned_to: int | None = None
     assigned_to_username: str | None = None
-    client_subtask_id: str | None = None
+    temporary_subtask_id: str | None = Field(default=None, alias="client_subtask_id")
 
 
 class TaskCreate(BaseModel):

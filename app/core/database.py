@@ -15,7 +15,15 @@ if DATABASE_URL.startswith("sqlite"):
 else:
     connect_args = {"sslmode": "require"}
 
-engine = create_engine(DATABASE_URL, connect_args=connect_args)
+engine_kwargs = {
+    "connect_args": connect_args,
+    "pool_pre_ping": True,
+}
+
+if not DATABASE_URL.startswith("sqlite"):
+    engine_kwargs["pool_recycle"] = int(os.environ.get("DB_POOL_RECYCLE_SECONDS", "300"))
+
+engine = create_engine(DATABASE_URL, **engine_kwargs)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
 Base = declarative_base()

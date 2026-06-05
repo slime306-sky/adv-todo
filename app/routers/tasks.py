@@ -245,11 +245,11 @@ def _validate_approved_payload_safe_override(original_task: TaskCreate, override
         subtask_changes = []
         # For each override subtask, find matching original
         for override_st in override_task.sub_tasks:
-            # If override provides a client_subtask_id, try client mapping first
-            client_id = getattr(override_st, "client_subtask_id", None) or (override_st.get("client_subtask_id") if isinstance(override_st, dict) else None)
+            # If override provides a temporary subtask id, try id mapping first
+            temporary_id = getattr(override_st, "temporary_subtask_id", None) or (override_st.get("temporary_subtask_id") if isinstance(override_st, dict) else None)
             matched = False
-            if client_id is not None and f"client:{client_id}" in orig_map and orig_map[f"client:{client_id}"]:
-                orig_idx = orig_map[f"client:{client_id}"].pop(0)
+            if temporary_id is not None and f"client:{temporary_id}" in orig_map and orig_map[f"client:{temporary_id}"]:
+                orig_idx = orig_map[f"client:{temporary_id}"].pop(0)
                 orig_st = original_task.sub_tasks[orig_idx]
                 matched = True
             else:
@@ -259,7 +259,7 @@ def _validate_approved_payload_safe_override(original_task: TaskCreate, override
                         status_code=400,
                         code="UNMATCHED_OVERRIDE_SUBTASK",
                         message="Override sub_task does not match any original sub_task by fingerprint",
-                        details={"fingerprint": fp, "client_id": client_id},
+                        details={"fingerprint": fp, "temporary_id": temporary_id},
                     )
                 orig_idx = orig_map[fp].pop(0)
                 orig_st = original_task.sub_tasks[orig_idx]
@@ -455,11 +455,11 @@ def create_task(
         if getattr(task, "sub_tasks", None):
             for st in task.sub_tasks:
                 subtask_fps.append(_fingerprint_obj(st))
-                cid = getattr(st, "client_subtask_id", None)
+                cid = getattr(st, "temporary_subtask_id", None) or (st.get("temporary_subtask_id") if isinstance(st, dict) else None)
                 if cid is None:
                     cid = uuid.uuid4().hex
                     try:
-                        setattr(st, "client_subtask_id", cid)
+                        setattr(st, "temporary_subtask_id", cid)
                     except Exception:
                         # best-effort: pydantic model should allow setting, but ignore if not
                         pass

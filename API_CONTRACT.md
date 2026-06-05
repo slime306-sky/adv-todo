@@ -583,17 +583,15 @@ Request body example:
 {
   "comment": "Approving and applying admin priority overrides",
   "approved_payload": {
-      "sub_tasks": [
-      {"client_subtask_id": "c1", "weightage_priority": 60},
-      {"client_subtask_id": "c2", "weightage_priority": 40}
-    ],
-    "subtask_temporary_ids": ["c1", "c2"]
-  }
-
-Note: Admins approve by referencing `client_subtask_id` values that identify the original requested sub-tasks. Clients may include `client_subtask_id` on each nested sub-task; if the client omits these IDs the server will generate stable temporary IDs when storing the creation request and place them in the stored wrapper under `subtask_temporary_ids`. Admins should use whichever IDs appear in `requested_payload.subtask_temporary_ids` (if present) or the client's provided `client_subtask_id` values when building `approved_payload`.
+    "sub_tasks": [
+      {"temporary_subtask_id": "c1", "weightage_priority": 60},
+      {"temporary_subtask_id": "c2", "weightage_priority": 40}
+    ]
   }
 }
 ```
+
+Note: Admins approve by referencing `temporary_subtask_id` values that identify the original requested sub-tasks. The server also accepts `client_subtask_id` as a legacy alias for backward compatibility. If the client omits the field entirely, the server generates stable temporary IDs when storing the creation request and places them in the stored wrapper under `subtask_temporary_ids`. Admins should use whichever IDs appear in `requested_payload.subtask_temporary_ids` (if present) or the sub-task IDs present in the request payload when building `approved_payload`.
 
 Response: the approving admin receives the `TaskCreationRequestResponse` (request updated with `approved_task_id` and `status: approved`). The created task is available via normal `GET /tasks/{id}`.
 
