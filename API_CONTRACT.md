@@ -216,7 +216,10 @@ Request body:
 
 ### DELETE /users/{user_id}
 
-Admin-only. Deletes a user after re-pointing dependent rows.
+Admin-only. Deletes a user. To avoid reassigning work to administrators, the service will:
+
+- Clear `assigned_to` on dependent `sub_tasks` (set to `null`) instead of reassigning them to the deleting admin.
+- Re-point `created_by` and other audit-related references to the acting admin where necessary so referential integrity is preserved.
 
 Response:
 
@@ -277,6 +280,29 @@ Response:
 ### GET /departments
 
 Authenticated users can list departments.
+
+## Dashboard
+
+### GET /dashboard
+
+Returns aggregate counts and recent activity. Admins see system-wide data; non-admins see counts scoped to tasks they created or are assigned to.
+
+Response shape:
+
+```json
+{
+  "total_tasks": 10,
+  "completed_tasks": 4,
+  "in_progress_tasks": 3,
+  "pending_tasks": 3,
+  "overdue": 2,
+  "recent_tasks": [ { "id": 12, "title": "...", "status": "not complete", "created_by": {"id":1,"name":"alice"} } ]
+}
+```
+
+Notes:
+- `overdue` counts tasks whose `end_date` is in the past and which are not `complete`.
+- Admins have full visibility and may use the same list/filter endpoints to fetch detailed overdue/pending lists.
 
 ### PUT /users/{user_id}/departments
 
@@ -354,6 +380,7 @@ Important rules:
 - If task-level `non_priority_flag=true`, the whole task is treated as non-priority and nested sub-tasks are stored as non-priority (`weightage_priority=0`, `subtask_priority=medium`).
 - In nested `sub_tasks`, only admins can set `weightage_priority` and `subtask_priority`.
 - For tasks with `non_priority_flag=false`, provided `weightage_priority` values across sub-tasks must sum to exactly `100`.
+- `assigned_to` in a `sub_task` MUST reference a non-admin user. Admin users cannot be assigned tasks or sub-tasks; attempts to assign an admin return `400` with `code: ADMIN_CANNOT_BE_ASSIGNED`.
 
 Behavior differences by role:
 
@@ -591,7 +618,7 @@ Request body example:
 }
 ```
 
-Note: Admins approve by referencing `temporary_subtask_id` values that identify the original requested sub-tasks. The server also accepts `client_subtask_id` as a legacy alias for backward compatibility. If the client omits the field entirely, the server generates stable temporary IDs when storing the creation request and places them in the stored wrapper under `subtask_temporary_ids`. Admins should use whichever IDs appear in `requested_payload.subtask_temporary_ids` (if present) or the sub-task IDs present in the request payload when building `approved_payload`.
+Note: Creation requests do not accept client-managed temporary sub-task IDs. The server generates UUID hex IDs when storing the creation request and places them in the stored wrapper under `subtask_temporary_ids`. Admins approve by referencing the generated `temporary_subtask_id` values in `approved_payload`.
 
 Response: the approving admin receives the `TaskCreationRequestResponse` (request updated with `approved_task_id` and `status: approved`). The created task is available via normal `GET /tasks/{id}`.
 

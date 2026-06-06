@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends
+from datetime import datetime
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
@@ -48,6 +49,9 @@ def get_dashboard(
     completed_tasks = query.filter(Task.status == TaskStatus.complete.value).count()
     in_progress_tasks = query.filter(Task.status == TaskStatus.in_progress.value).count()
     pending_tasks = query.filter(Task.status == TaskStatus.not_complete.value).count()
+    # Overdue: tasks with an end_date in the past and not completed
+    now = datetime.utcnow()
+    overdue_tasks = query.filter(Task.end_date != None).filter(Task.end_date < now).filter(Task.status != TaskStatus.complete.value).count()
 
     recent_tasks = query.order_by(Task.id.desc()).limit(3).all()
 
@@ -56,5 +60,6 @@ def get_dashboard(
         "completed_tasks": completed_tasks,
         "in_progress_tasks": in_progress_tasks,
         "pending_tasks": pending_tasks,
+        "overdue": overdue_tasks,
         "recent_tasks": [_serialize_recent_task(task) for task in recent_tasks],
     }

@@ -180,7 +180,7 @@ def delete_user(
         synchronize_session=False,
     )
     db.query(SubTask).filter(SubTask.assigned_to == user.id).update(
-        {SubTask.assigned_to: current_user.id},
+        {SubTask.assigned_to: None},
         synchronize_session=False,
     )
     db.query(TaskUpdateRequest).filter(TaskUpdateRequest.requested_by == user.id).update(

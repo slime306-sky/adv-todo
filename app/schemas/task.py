@@ -9,7 +9,7 @@ from app.schemas.sub_task import SubTaskResponse
 from app.schemas.user import UserReference
 
 
-class TaskSubTaskCreate(BaseModel):
+class TaskSubTaskBase(BaseModel):
     model_config = {"populate_by_name": True}
 
     title: str
@@ -24,15 +24,22 @@ class TaskSubTaskCreate(BaseModel):
     actual_hours: Annotated[int, Field(ge=0, lt=24)] = 0
     assigned_to: int | None = None
     assigned_to_username: str | None = None
-    temporary_subtask_id: str | None = Field(default=None, alias="client_subtask_id")
 
 
-class TaskCreate(BaseModel):
-    __payload_version__ = 1
+class TaskSubTaskCreate(TaskSubTaskBase):
+    pass
+
+
+class TaskApprovedSubTaskOverride(BaseModel):
+    temporary_subtask_id: str | None = None
+    weightage_priority: Annotated[int, Field(ge=0, le=100)] | None = None
+    subtask_priority: SubTaskPriority | None = None
+
+
+class TaskRequestBase(BaseModel):
     title: str
     description: str
     non_priority_flag: bool = False
-    sub_tasks: list[TaskSubTaskCreate] | None = None
     sub_task_count: Annotated[int, Field(ge=0)] | None = None
 
     @root_validator(skip_on_failure=True)
@@ -47,6 +54,17 @@ class TaskCreate(BaseModel):
             raise ValueError("sub_task_count must match number of sub_tasks")
 
         return values
+
+
+class TaskCreate(TaskRequestBase):
+    __payload_version__ = 1
+
+    sub_tasks: list[TaskSubTaskCreate] | None = None
+
+
+class TaskApprovedPayload(BaseModel):
+    non_priority_flag: bool | None = None
+    sub_tasks: list[TaskApprovedSubTaskOverride] | None = None
 
 
 class TaskResponse(BaseModel):
@@ -175,7 +193,7 @@ class TaskUpdateRequestDecision(BaseModel):
 
 class TaskCreationRequestDecision(BaseModel):
     comment: str | None = None
-    approved_payload: TaskCreate | None = None
+    approved_payload: TaskApprovedPayload | None = None
 
 
 class TaskUpdateRequestResponse(BaseModel):

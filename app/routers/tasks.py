@@ -185,20 +185,6 @@ def _validate_approved_payload_safe_override(original_task: TaskCreate, override
             details={"invalid_fields": sorted(list(extra_top))},
         )
 
-    # Check if core task fields were changed
-    if override_task.title != original_task.title:
-        raise api_error(
-            status_code=400,
-            code="INVALID_OVERRIDE_FIELD",
-            message="Admin can only override sub_tasks priority fields, not task title",
-        )
-    if override_task.description != original_task.description:
-        raise api_error(
-            status_code=400,
-            code="INVALID_OVERRIDE_FIELD",
-            message="Admin can only override sub_tasks priority fields, not task description",
-        )
-
     if override_task.non_priority_flag != original_task.non_priority_flag:
         changes["non_priority_flag"] = {
             "from": original_task.non_priority_flag,
@@ -267,7 +253,7 @@ def _validate_approved_payload_safe_override(original_task: TaskCreate, override
 
             # Per-subtask whitelist of allowed override fields
             provided_fields = getattr(override_st, "model_fields_set", set())
-            allowed_fields = {"weightage_priority", "subtask_priority"}
+            allowed_fields = {"temporary_subtask_id", "weightage_priority", "subtask_priority"}
             extra = set(provided_fields) - allowed_fields
             if extra:
                 raise api_error(
@@ -455,15 +441,7 @@ def create_task(
         if getattr(task, "sub_tasks", None):
             for st in task.sub_tasks:
                 subtask_fps.append(_fingerprint_obj(st))
-                cid = getattr(st, "temporary_subtask_id", None) or (st.get("temporary_subtask_id") if isinstance(st, dict) else None)
-                if cid is None:
-                    cid = uuid.uuid4().hex
-                    try:
-                        setattr(st, "temporary_subtask_id", cid)
-                    except Exception:
-                        # best-effort: pydantic model should allow setting, but ignore if not
-                        pass
-                subtask_temp_ids.append(cid)
+                subtask_temp_ids.append(uuid.uuid4().hex)
 
         if isinstance(payload_wrapper, dict):
             payload_wrapper = {
@@ -691,10 +669,63 @@ def approve_task_creation_request(
                 )
 
             override_diff = {}
+            task_payload = original_task.model_copy(deep=True)
             if payload.approved_payload:
                 override_diff = _validate_approved_payload_safe_override(original_task, payload.approved_payload)
+                if payload.approved_payload.non_priority_flag is not None:
+                    task_payload.non_priority_flag = payload.approved_payload.non_priority_flag
 
-            task_payload = payload.approved_payload or original_task
+                if payload.approved_payload.sub_tasks is not None and task_payload.sub_tasks is not None:
+                    approved_sub_tasks = []
+                    original_temp_ids = []
+                    stored_temp_ids = getattr(original_task, "_stored_subtask_temporary_ids", None)
+                    if isinstance(stored_temp_ids, list):
+                        original_temp_ids = stored_temp_ids
+
+                    original_lookup: dict[str, list[int]] = {}
+
+                    def _fingerprint_from_obj(st):
+                        title = getattr(st, "title", None) or (st.get("title") if isinstance(st, dict) else "")
+                        desc = getattr(st, "description", None) or (st.get("description") if isinstance(st, dict) else "")
+                        days = getattr(st, "estimated_days", None) or (st.get("estimated_days") if isinstance(st, dict) else "")
+                        hours = getattr(st, "estimated_hours", None) or (st.get("estimated_hours") if isinstance(st, dict) else "")
+                        assignee = getattr(st, "assigned_to_username", None) or (st.get("assigned_to_username") if isinstance(st, dict) else "")
+                        return f"{str(title).strip().lower()}|{str(desc).strip().lower()}|{str(days)}|{str(hours)}|{str(assignee).strip().lower()}"
+
+                    for idx, st in enumerate(original_task.sub_tasks or []):
+                        if idx < len(original_temp_ids) and original_temp_ids[idx] is not None:
+                            original_lookup.setdefault(f"client:{original_temp_ids[idx]}", []).append(idx)
+                        original_lookup.setdefault(_fingerprint_from_obj(st), []).append(idx)
+
+                    for override_st in payload.approved_payload.sub_tasks:
+                        temporary_id = getattr(override_st, "temporary_subtask_id", None)
+                        orig_idx = None
+                        if temporary_id is not None and f"client:{temporary_id}" in original_lookup and original_lookup[f"client:{temporary_id}"]:
+                            orig_idx = original_lookup[f"client:{temporary_id}"].pop(0)
+                        else:
+                            fp = _fingerprint_from_obj(override_st)
+                            if fp in original_lookup and original_lookup[fp]:
+                                orig_idx = original_lookup[fp].pop(0)
+                        if orig_idx is None:
+                            raise api_error(
+                                status_code=400,
+                                code="UNMATCHED_OVERRIDE_SUBTASK",
+                                message="Override sub_task does not match any original sub_task",
+                                details={"temporary_id": temporary_id},
+                            )
+
+                        original_st = original_task.sub_tasks[orig_idx]
+                        approved_sub_tasks.append(
+                            original_st.model_copy(
+                                update={
+                                    "weightage_priority": override_st.weightage_priority,
+                                    "subtask_priority": override_st.subtask_priority,
+                                },
+                                deep=True,
+                            )
+                        )
+
+                    task_payload.sub_tasks = approved_sub_tasks
 
             # Create the task (will be committed with this transaction)
             try:
@@ -743,6 +774,8 @@ def approve_task_creation_request(
             if override_diff:
                 audit_details["override_diff"] = override_diff
 
+            audit_details = jsonable_encoder(audit_details)
+
             log_audit_event(
                 db=db,
                 action="APPROVE",
@@ -753,6 +786,7 @@ def approve_task_creation_request(
                 details=audit_details,
             )
 
+            db.flush()
             # leaving context manager will commit
             db.refresh(request)
             return _serialize_task_creation_request(request)

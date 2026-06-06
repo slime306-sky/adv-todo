@@ -70,13 +70,24 @@ def resolve_assigned_user(
     elif assigned_to is not None:
         user = db.query(User).filter(User.id == assigned_to).first()
     else:
-        user = current_user
+        raise api_error(
+            status_code=400,
+            code="ASSIGNEE_REQUIRED_FOR_ADMIN",
+            message="Admin must assign the task to a non-admin user",
+        )
 
     if not user:
         raise api_error(
             status_code=404,
             code="ASSIGNED_USER_NOT_FOUND",
             message="Assigned user not found",
+        )
+
+    if user.role == "admin":
+        raise api_error(
+            status_code=400,
+            code="ADMIN_CANNOT_BE_ASSIGNED",
+            message="Admin users cannot be assigned tasks or sub-tasks",
         )
 
     return user
