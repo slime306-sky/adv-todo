@@ -122,11 +122,42 @@ def _serialize_task_update_request(request: TaskUpdateRequest):
 
 
 def _serialize_task_creation_request(request: TaskCreationRequest):
+    def _normalize_requested_payload(requested_payload):
+        if not isinstance(requested_payload, dict):
+            return requested_payload
+
+        normalized = dict(requested_payload)
+        payload = normalized.get("payload")
+        if isinstance(payload, dict):
+            payload_copy = dict(payload)
+            sub_tasks = payload_copy.get("sub_tasks")
+            if isinstance(sub_tasks, list):
+                temp_ids = normalized.get("subtask_temporary_ids") or normalized.get("subtask_client_ids")
+                for idx, sub_task in enumerate(sub_tasks):
+                    if not isinstance(sub_task, dict):
+                        continue
+                    embedded_id = sub_task.get("temporary_subtask_id")
+                    if embedded_id is None and isinstance(temp_ids, list) and idx < len(temp_ids):
+                        embedded_id = temp_ids[idx]
+                    if embedded_id is None:
+                        embedded_id = sub_task.get("client_subtask_id")
+                    if embedded_id is not None:
+                        sub_task = dict(sub_task)
+                        sub_task["temporary_subtask_id"] = embedded_id
+                        sub_task.pop("client_subtask_id", None)
+                        sub_tasks[idx] = sub_task
+                payload_copy["sub_tasks"] = sub_tasks
+            normalized["payload"] = payload_copy
+
+        normalized.pop("subtask_temporary_ids", None)
+        normalized.pop("subtask_client_ids", None)
+        return normalized
+
     return {
         "id": request.id,
         "requested_by": _serialize_user_reference(request.requester, request.requested_by),
         "status": request.status,
-        "requested_payload": request.requested_payload,
+        "requested_payload": _normalize_requested_payload(request.requested_payload),
         "review_comment": request.review_comment,
         "reviewed_by": _serialize_user_reference(request.reviewer, request.reviewed_by),
         "approved_task_id": request.approved_task_id,

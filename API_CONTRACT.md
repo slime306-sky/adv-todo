@@ -416,7 +416,17 @@ Non-admin response (task creation request):
   "id": 23,
   "requested_by": {"id": 5, "name": "carol"},
   "status": "pending",
-  "requested_payload": {"payload": {"title": "Build API", "description": "...", "sub_tasks": [...]}, "version": 1, "subtask_temporary_ids": ["c1","c2"]},
+  "requested_payload": {
+    "payload": {
+      "title": "Build API",
+      "description": "...",
+      "sub_tasks": [
+        {"title": "...", "temporary_subtask_id": "c1"},
+        {"title": "...", "temporary_subtask_id": "c2"}
+      ]
+    },
+    "version": 1
+  },
   "review_comment": null,
   "reviewed_by": null,
   "approved_task_id": null,
@@ -587,7 +597,17 @@ Response item shape (`TaskCreationRequestResponse`):
   "id": 23,
   "requested_by": {"id": 5, "name": "carol"},
   "status": "pending",
-  "requested_payload": {"payload": {"title": "Build API", "description": "...", "sub_tasks": [...]}, "version": 1, "subtask_temporary_ids": ["c1","c2"]},
+  "requested_payload": {
+    "payload": {
+      "title": "Build API",
+      "description": "...",
+      "sub_tasks": [
+        {"title": "...", "temporary_subtask_id": "c1"},
+        {"title": "...", "temporary_subtask_id": "c2"}
+      ]
+    },
+    "version": 1
+  },
   "review_comment": null,
   "reviewed_by": null,
   "approved_task_id": null,
