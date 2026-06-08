@@ -19,4 +19,5 @@ class DashboardResponse(BaseModel):
     completed_tasks: int
     in_progress_tasks: int
     pending_tasks: int
+    overdue: int
     recent_tasks: list[DashboardRecentTask]
