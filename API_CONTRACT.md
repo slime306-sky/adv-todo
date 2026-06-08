@@ -618,7 +618,7 @@ Request body example:
 }
 ```
 
-Note: Creation requests do not accept client-managed temporary sub-task IDs. The server generates UUID hex IDs when storing the creation request and places them in the stored wrapper under `subtask_temporary_ids`. Admins approve by referencing the generated `temporary_subtask_id` values in `approved_payload`.
+Note: Creation requests do not accept client-managed temporary sub-task IDs. The server generates UUID hex IDs when storing the creation request and embeds them on each stored `sub_task` object as `temporary_subtask_id`. Admins approve by referencing those `temporary_subtask_id` values in `approved_payload`.
 
 Response: the approving admin receives the `TaskCreationRequestResponse` (request updated with `approved_task_id` and `status: approved`). The created task is available via normal `GET /tasks/{id}`.
 

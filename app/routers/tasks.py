@@ -437,18 +437,22 @@ def create_task(
             return f"{str(title).strip().lower()}|{str(desc).strip().lower()}|{str(days)}|{str(hours)}|{str(assignee).strip().lower()}"
 
         subtask_fps = []
-        subtask_temp_ids = []
         if getattr(task, "sub_tasks", None):
-            for st in task.sub_tasks:
-                subtask_fps.append(_fingerprint_obj(st))
-                subtask_temp_ids.append(uuid.uuid4().hex)
+            # inject server-generated temporary_subtask_id into each sub_task in the stored payload
+            if isinstance(payload_wrapper, dict) and "sub_tasks" in payload_wrapper and isinstance(payload_wrapper["sub_tasks"], list):
+                for st_dict in payload_wrapper["sub_tasks"]:
+                    subtask_id = uuid.uuid4().hex
+                    st_dict["temporary_subtask_id"] = subtask_id
+                    subtask_fps.append(_fingerprint_obj(st_dict))
+            else:
+                for st in task.sub_tasks:
+                    subtask_fps.append(_fingerprint_obj(st))
 
         if isinstance(payload_wrapper, dict):
             payload_wrapper = {
                 "payload": payload_wrapper,
                 "version": getattr(TaskCreate, "__payload_version__", 1),
                 "subtask_fingerprints": subtask_fps,
-                "subtask_temporary_ids": subtask_temp_ids,
             }
 
         creation_request = TaskCreationRequest(
@@ -633,8 +637,17 @@ def approve_task_creation_request(
                 if isinstance(stored, dict):
                     if "subtask_fingerprints" in stored:
                         setattr(original_task, "_stored_subtask_fingerprints", stored.get("subtask_fingerprints"))
-                    if "subtask_temporary_ids" in stored:
-                        setattr(original_task, "_stored_subtask_temporary_ids", stored.get("subtask_temporary_ids"))
+                # If temporary ids were embedded in the stored payload sub_tasks, extract them
+                stored_temp_ids = None
+                if isinstance(payload_body, dict) and payload_body.get("sub_tasks"):
+                    maybe_ids = [st.get("temporary_subtask_id") if isinstance(st, dict) else None for st in payload_body.get("sub_tasks")]
+                    if any(maybe_ids):
+                        stored_temp_ids = maybe_ids
+                # Fallback to separate array key if present (legacy)
+                if isinstance(stored, dict) and "subtask_temporary_ids" in stored:
+                    stored_temp_ids = stored.get("subtask_temporary_ids")
+                if stored_temp_ids is not None:
+                    setattr(original_task, "_stored_subtask_temporary_ids", stored_temp_ids)
                 # enforce stored payload version compatibility
                 stored_version = stored.get("version", 1) if isinstance(stored, dict) else 1
                 if stored_version > getattr(TaskCreate, "__payload_version__", 1):

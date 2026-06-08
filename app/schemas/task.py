@@ -27,6 +27,8 @@ class TaskSubTaskBase(BaseModel):
 
 
 class TaskSubTaskCreate(TaskSubTaskBase):
+    # Server-generated temporary id stored with the sub-task when a creation request is saved.
+    temporary_subtask_id: str | None = None
     pass
 
 
