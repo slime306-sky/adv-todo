@@ -141,6 +141,25 @@ This document lists all endpoints, descriptions, sample request payloads, and ex
     }
     ```
 
+- GET /timeline
+  - Description: Admin-only task summary list for frontend cards or timeline views.
+  - Auth: Admin
+  - Response (example):
+    ```json
+    {
+      "items": [
+        {
+          "id": 11,
+          "title": "Build API",
+          "start_date": "2026-06-01T00:00:00Z",
+          "end_date": "2026-06-05T00:00:00Z",
+          "assignee": {"id": 1, "name": "udayshah"},
+          "sub_task_count": 4
+        }
+      ]
+    }
+    ```
+
 **Audit Logs**
 
 - GET /audit-logs
@@ -239,6 +258,41 @@ This document lists all endpoints, descriptions, sample request payloads, and ex
     {"task_id":1, "total_priority":100, "items": [...]}
     ```
 
+- GET /tasks/{task_id}/timeline
+  - Description: Get task timeline summary for chart rendering.
+  - Auth: Authenticated user
+  - Response: task timeline with bars and sub-task timing breakdown, including task `start_date` and `end_date`
+  - Response example:
+    ```json
+    {
+      "task_id": 11,
+      "task_title": "Build API",
+      "start_date": "2026-06-01T00:00:00Z",
+      "end_date": "2026-06-05T00:00:00Z",
+      "total_estimated_hours": 24,
+      "total_actual_hours": 20,
+      "total_expected_hours": 18,
+      "bars": [
+        {"key": "estimated", "label": "How much time it will take", "hours": 24, "percentage": 100},
+        {"key": "actual", "label": "How much time user took", "hours": 20, "percentage": 83.33},
+        {"key": "expected", "label": "How much time it should have taken", "hours": 18, "percentage": 75}
+      ],
+      "sub_tasks": [
+        {
+          "sub_task_id": 101,
+          "title": "Design models",
+          "status": "complete",
+          "priority": 50,
+          "estimated_hours": 10,
+          "actual_hours": 8,
+          "expected_hours": 12,
+          "start_date": "2026-06-01T00:00:00Z",
+          "end_date": "2026-06-02T00:00:00Z"
+        }
+      ]
+    }
+    ```
+
 **Task Creation & Update Requests**
 
 - GET /task-creation-requests/my
@@ -319,13 +373,13 @@ This document lists all endpoints, descriptions, sample request payloads, and ex
 **Activities**
 
 - POST /activities
-  - Description: Create an activity (admin only).
-  - Auth: Admin
+  - Description: Create an activity for a sub-task. Any authenticated user can create.
+  - Auth: Any authenticated user
   - Payload:
     ```json
-    {"title":"Work done","description":"...","date":"2026-01-01T00:00:00Z","sub_task_id":5}
+    {"title":"Work done","description":"...","note":"extra detail","date":"2026-01-01","sub_task_id":5}
     ```
-  - Response: created activity object
+  - Response: created activity object with `note`
 
 - PUT /activities/{activity_id}
   - Description: Update an activity (admin only).

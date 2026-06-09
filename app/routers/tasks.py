@@ -1319,6 +1319,8 @@ def get_task_timeline(
     return {
         "task_id": task.id,
         "task_title": task.title,
+        "start_date": task.start_date,
+        "end_date": task.end_date,
         "total_estimated_hours": round(total_estimated_hours, 2),
         "total_actual_hours": round(total_actual_hours, 2),
         "total_expected_hours": round(total_expected_hours, 2),

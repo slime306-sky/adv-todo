@@ -1,8 +1,9 @@
+from datetime import datetime
+
 from pydantic import BaseModel
 
 from app.models.task import TaskStatus
 from app.schemas.user import UserReference
-from app.schemas.task import TaskTimelineResponse
 
 
 class DashboardRecentTask(BaseModel):
@@ -10,7 +11,6 @@ class DashboardRecentTask(BaseModel):
     title: str
     status: TaskStatus
     created_by: UserReference
-    timeline: TaskTimelineResponse | None = None
 
     class Config:
         from_attributes = True
@@ -23,3 +23,16 @@ class DashboardResponse(BaseModel):
     pending_tasks: int
     overdue: int
     recent_tasks: list[DashboardRecentTask]
+
+
+class AdminTaskSummaryItem(BaseModel):
+    id: int
+    title: str
+    start_date: datetime | None = None
+    end_date: datetime | None = None
+    assignee: UserReference | None = None
+    sub_task_count: int
+
+
+class AdminTaskSummaryResponse(BaseModel):
+    items: list[AdminTaskSummaryItem]
