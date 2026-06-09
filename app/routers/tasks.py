@@ -465,6 +465,11 @@ def create_task(
                 "sub_tasks_created_count": len(created_sub_tasks),
             }
 
+        if task.sub_tasks:
+            for subtask in task.sub_tasks:
+                if not subtask.assigned_to and not subtask.assigned_to_username:
+                    subtask.assigned_to = current_user.id
+
         # Store payload with explicit version wrapper and fingerprints
         payload_wrapper = jsonable_encoder(task)
         def _fingerprint_obj(st):
