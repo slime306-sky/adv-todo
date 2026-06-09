@@ -343,6 +343,14 @@ def _create_task_from_payload(
             validate_weightage_priority_total(sum(provided_priorities))
 
         for sub_task in task.sub_tasks:
+            print(
+                "SUBTASK:",
+                sub_task.title,
+                "assigned_to=",
+                sub_task.assigned_to,
+                "assigned_to_username=",
+                sub_task.assigned_to_username,
+            )
             assigned_user = resolve_assigned_user(
                 db=db,
                 assigned_to=sub_task.assigned_to,
