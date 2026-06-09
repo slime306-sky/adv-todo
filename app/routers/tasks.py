@@ -615,229 +615,228 @@ def approve_task_creation_request(
 ):
     logger = logging.getLogger(__name__)
 
-    # Use explicit transaction boundary so the row lock is held for the duration
     try:
-        with db.begin():
-            request = (
-                db.query(TaskCreationRequest)
-                .filter(TaskCreationRequest.id == request_id)
-                .with_for_update(nowait=False)
-                .first()
+        request = (
+            db.query(TaskCreationRequest)
+            .filter(TaskCreationRequest.id == request_id)
+            .with_for_update(nowait=False)
+            .first()
+        )
+        if not request:
+            raise api_error(
+                status_code=404,
+                code="TASK_CREATION_REQUEST_NOT_FOUND",
+                message="Task creation request not found",
             )
-            if not request:
-                raise api_error(
-                    status_code=404,
-                    code="TASK_CREATION_REQUEST_NOT_FOUND",
-                    message="Task creation request not found",
-                )
 
-            if request.status != TaskCreationRequestStatus.pending.value:
+        if request.status != TaskCreationRequestStatus.pending.value:
+            raise api_error(
+                status_code=400,
+                code="TASK_CREATION_REQUEST_ALREADY_REVIEWED",
+                message="Request is already reviewed",
+            )
+
+        # Ensure requester still exists and is active
+        requester = db.query(User).filter(User.id == request.requested_by).first()
+        if not requester:
+            raise api_error(
+                status_code=400,
+                code="REQUESTER_NOT_FOUND",
+                message="User who requested this task no longer exists",
+            )
+        if hasattr(requester, "is_active") and not requester.is_active:
+            raise api_error(
+                status_code=400,
+                code="REQUESTER_INACTIVE",
+                message="User who requested this task is inactive",
+            )
+
+        # Parse stored payload (support legacy and wrapped payload)
+        stored = request.requested_payload
+        if isinstance(stored, dict) and "payload" in stored:
+            payload_body = stored["payload"]
+            stored_version = stored.get("version", 1)
+        else:
+            payload_body = stored
+            stored_version = 1
+
+        try:
+            original_task = TaskCreate(**payload_body)
+            # attach stored fingerprints to the TaskCreate instance for later matching
+            if isinstance(stored, dict):
+                if "subtask_fingerprints" in stored:
+                    setattr(original_task, "_stored_subtask_fingerprints", stored.get("subtask_fingerprints"))
+            # If temporary ids were embedded in the stored payload sub_tasks, extract them
+            stored_temp_ids = None
+            if isinstance(payload_body, dict) and payload_body.get("sub_tasks"):
+                maybe_ids = [st.get("temporary_subtask_id") if isinstance(st, dict) else None for st in payload_body.get("sub_tasks")]
+                if any(maybe_ids):
+                    stored_temp_ids = maybe_ids
+            # Fallback to separate array key if present (legacy)
+            if isinstance(stored, dict) and "subtask_temporary_ids" in stored:
+                stored_temp_ids = stored.get("subtask_temporary_ids")
+            if stored_temp_ids is not None:
+                setattr(original_task, "_stored_subtask_temporary_ids", stored_temp_ids)
+            # enforce stored payload version compatibility
+            stored_version = stored.get("version", 1) if isinstance(stored, dict) else 1
+            if stored_version > getattr(TaskCreate, "__payload_version__", 1):
                 raise api_error(
                     status_code=400,
-                    code="TASK_CREATION_REQUEST_ALREADY_REVIEWED",
-                    message="Request is already reviewed",
+                    code="UNSUPPORTED_STORED_PAYLOAD_VERSION",
+                    message="Stored task payload version is newer than supported by this service",
+                    details={"stored_version": stored_version, "supported_version": getattr(TaskCreate, "__payload_version__", 1)},
                 )
-
-            # Ensure requester still exists and is active
-            requester = db.query(User).filter(User.id == request.requested_by).first()
-            if not requester:
-                raise api_error(
-                    status_code=400,
-                    code="REQUESTER_NOT_FOUND",
-                    message="User who requested this task no longer exists",
-                )
-            if hasattr(requester, "is_active") and not requester.is_active:
-                raise api_error(
-                    status_code=400,
-                    code="REQUESTER_INACTIVE",
-                    message="User who requested this task is inactive",
-                )
-
-            # Parse stored payload (support legacy and wrapped payload)
-            stored = request.requested_payload
-            if isinstance(stored, dict) and "payload" in stored:
-                payload_body = stored["payload"]
-                stored_version = stored.get("version", 1)
-            else:
-                payload_body = stored
-                stored_version = 1
-
+        except Exception as exc:
+            # Audit failure in separate session; don't let audit errors break main flow
             try:
-                original_task = TaskCreate(**payload_body)
-                # attach stored fingerprints to the TaskCreate instance for later matching
-                if isinstance(stored, dict):
-                    if "subtask_fingerprints" in stored:
-                        setattr(original_task, "_stored_subtask_fingerprints", stored.get("subtask_fingerprints"))
-                # If temporary ids were embedded in the stored payload sub_tasks, extract them
-                stored_temp_ids = None
-                if isinstance(payload_body, dict) and payload_body.get("sub_tasks"):
-                    maybe_ids = [st.get("temporary_subtask_id") if isinstance(st, dict) else None for st in payload_body.get("sub_tasks")]
-                    if any(maybe_ids):
-                        stored_temp_ids = maybe_ids
-                # Fallback to separate array key if present (legacy)
-                if isinstance(stored, dict) and "subtask_temporary_ids" in stored:
-                    stored_temp_ids = stored.get("subtask_temporary_ids")
-                if stored_temp_ids is not None:
-                    setattr(original_task, "_stored_subtask_temporary_ids", stored_temp_ids)
-                # enforce stored payload version compatibility
-                stored_version = stored.get("version", 1) if isinstance(stored, dict) else 1
-                if stored_version > getattr(TaskCreate, "__payload_version__", 1):
-                    raise api_error(
-                        status_code=400,
-                        code="UNSUPPORTED_STORED_PAYLOAD_VERSION",
-                        message="Stored task payload version is newer than supported by this service",
-                        details={"stored_version": stored_version, "supported_version": getattr(TaskCreate, "__payload_version__", 1)},
-                    )
-            except Exception as exc:
-                # Audit failure in separate session; don't let audit errors break main flow
-                try:
-                    separate_session = SessionLocal()
-                    log_audit_event(
-                        db=separate_session,
-                        action="APPROVE_FAILED",
-                        entity_type="task_creation_request",
-                        entity_id=request.id,
-                        user_id=current_user.id,
-                        message="Task creation request approval failed - deserialization error",
-                        details={"error": str(exc)},
-                    )
-                    separate_session.commit()
-                    separate_session.close()
-                except Exception as audit_exc:
-                    logger.exception("Failed to write separate audit log: %s", audit_exc)
-                raise api_error(
-                    status_code=400,
-                    code="INVALID_STORED_PAYLOAD",
-                    message="Stored task payload is corrupted or invalid",
-                    dev_message=str(exc),
+                separate_session = SessionLocal()
+                log_audit_event(
+                    db=separate_session,
+                    action="APPROVE_FAILED",
+                    entity_type="task_creation_request",
+                    entity_id=request.id,
+                    user_id=current_user.id,
+                    message="Task creation request approval failed - deserialization error",
+                    details={"error": str(exc)},
                 )
+                separate_session.commit()
+                separate_session.close()
+            except Exception as audit_exc:
+                logger.exception("Failed to write separate audit log: %s", audit_exc)
+            raise api_error(
+                status_code=400,
+                code="INVALID_STORED_PAYLOAD",
+                message="Stored task payload is corrupted or invalid",
+                dev_message=str(exc),
+            )
 
-            override_diff = {}
-            task_payload = original_task.model_copy(deep=True)
-            if payload.approved_payload:
-                override_diff = _validate_approved_payload_safe_override(original_task, payload.approved_payload)
-                if payload.approved_payload.non_priority_flag is not None:
-                    task_payload.non_priority_flag = payload.approved_payload.non_priority_flag
+        override_diff = {}
+        task_payload = original_task.model_copy(deep=True)
+        if payload.approved_payload:
+            override_diff = _validate_approved_payload_safe_override(original_task, payload.approved_payload)
+            if payload.approved_payload.non_priority_flag is not None:
+                task_payload.non_priority_flag = payload.approved_payload.non_priority_flag
 
-                if payload.approved_payload.sub_tasks is not None and task_payload.sub_tasks is not None:
-                    approved_sub_tasks = []
-                    original_temp_ids = []
-                    stored_temp_ids = getattr(original_task, "_stored_subtask_temporary_ids", None)
-                    if isinstance(stored_temp_ids, list):
-                        original_temp_ids = stored_temp_ids
+            if payload.approved_payload.sub_tasks is not None and task_payload.sub_tasks is not None:
+                approved_sub_tasks = []
+                original_temp_ids = []
+                stored_temp_ids = getattr(original_task, "_stored_subtask_temporary_ids", None)
+                if isinstance(stored_temp_ids, list):
+                    original_temp_ids = stored_temp_ids
 
-                    original_lookup: dict[str, list[int]] = {}
+                original_lookup: dict[str, list[int]] = {}
 
-                    def _fingerprint_from_obj(st):
-                        title = getattr(st, "title", None) or (st.get("title") if isinstance(st, dict) else "")
-                        desc = getattr(st, "description", None) or (st.get("description") if isinstance(st, dict) else "")
-                        days = getattr(st, "estimated_days", None) or (st.get("estimated_days") if isinstance(st, dict) else "")
-                        hours = getattr(st, "estimated_hours", None) or (st.get("estimated_hours") if isinstance(st, dict) else "")
-                        assignee = getattr(st, "assigned_to_username", None) or (st.get("assigned_to_username") if isinstance(st, dict) else "")
-                        return f"{str(title).strip().lower()}|{str(desc).strip().lower()}|{str(days)}|{str(hours)}|{str(assignee).strip().lower()}"
+                def _fingerprint_from_obj(st):
+                    title = getattr(st, "title", None) or (st.get("title") if isinstance(st, dict) else "")
+                    desc = getattr(st, "description", None) or (st.get("description") if isinstance(st, dict) else "")
+                    days = getattr(st, "estimated_days", None) or (st.get("estimated_days") if isinstance(st, dict) else "")
+                    hours = getattr(st, "estimated_hours", None) or (st.get("estimated_hours") if isinstance(st, dict) else "")
+                    assignee = getattr(st, "assigned_to_username", None) or (st.get("assigned_to_username") if isinstance(st, dict) else "")
+                    return f"{str(title).strip().lower()}|{str(desc).strip().lower()}|{str(days)}|{str(hours)}|{str(assignee).strip().lower()}"
 
-                    for idx, st in enumerate(original_task.sub_tasks or []):
-                        if idx < len(original_temp_ids) and original_temp_ids[idx] is not None:
-                            original_lookup.setdefault(f"client:{original_temp_ids[idx]}", []).append(idx)
-                        original_lookup.setdefault(_fingerprint_from_obj(st), []).append(idx)
+                for idx, st in enumerate(original_task.sub_tasks or []):
+                    if idx < len(original_temp_ids) and original_temp_ids[idx] is not None:
+                        original_lookup.setdefault(f"client:{original_temp_ids[idx]}", []).append(idx)
+                    original_lookup.setdefault(_fingerprint_from_obj(st), []).append(idx)
 
-                    for override_st in payload.approved_payload.sub_tasks:
-                        temporary_id = getattr(override_st, "temporary_subtask_id", None)
-                        orig_idx = None
-                        if temporary_id is not None and f"client:{temporary_id}" in original_lookup and original_lookup[f"client:{temporary_id}"]:
-                            orig_idx = original_lookup[f"client:{temporary_id}"].pop(0)
-                        else:
-                            fp = _fingerprint_from_obj(override_st)
-                            if fp in original_lookup and original_lookup[fp]:
-                                orig_idx = original_lookup[fp].pop(0)
-                        if orig_idx is None:
-                            raise api_error(
-                                status_code=400,
-                                code="UNMATCHED_OVERRIDE_SUBTASK",
-                                message="Override sub_task does not match any original sub_task",
-                                details={"temporary_id": temporary_id},
-                            )
-
-                        original_st = original_task.sub_tasks[orig_idx]
-                        approved_sub_tasks.append(
-                            original_st.model_copy(
-                                update={
-                                    "weightage_priority": override_st.weightage_priority,
-                                    "subtask_priority": override_st.subtask_priority,
-                                },
-                                deep=True,
-                            )
+                for override_st in payload.approved_payload.sub_tasks:
+                    temporary_id = getattr(override_st, "temporary_subtask_id", None)
+                    orig_idx = None
+                    if temporary_id is not None and f"client:{temporary_id}" in original_lookup and original_lookup[f"client:{temporary_id}"]:
+                        orig_idx = original_lookup[f"client:{temporary_id}"].pop(0)
+                    else:
+                        fp = _fingerprint_from_obj(override_st)
+                        if fp in original_lookup and original_lookup[fp]:
+                            orig_idx = original_lookup[fp].pop(0)
+                    if orig_idx is None:
+                        raise api_error(
+                            status_code=400,
+                            code="UNMATCHED_OVERRIDE_SUBTASK",
+                            message="Override sub_task does not match any original sub_task",
+                            details={"temporary_id": temporary_id},
                         )
 
-                    task_payload.sub_tasks = approved_sub_tasks
-
-            # Create the task (will be committed with this transaction)
-            try:
-                new_task, created_sub_tasks = _create_task_from_payload(
-                    db,
-                    task_payload,
-                    creator_id=request.requested_by,
-                    current_user=current_user,
-                )
-            except Exception as exc:
-                # Audit creation failure in separate session; keep main exception semantics
-                try:
-                    separate_session = SessionLocal()
-                    log_audit_event(
-                        db=separate_session,
-                        action="APPROVE_FAILED",
-                        entity_type="task_creation_request",
-                        entity_id=request.id,
-                        user_id=current_user.id,
-                        message="Task creation request approval failed - task creation error",
-                        details={"error": str(exc)},
+                    original_st = original_task.sub_tasks[orig_idx]
+                    approved_sub_tasks.append(
+                        original_st.model_copy(
+                            update={
+                                "weightage_priority": override_st.weightage_priority,
+                                "subtask_priority": override_st.subtask_priority,
+                            },
+                            deep=True,
+                        )
                     )
-                    separate_session.commit()
-                    separate_session.close()
-                except Exception as audit_exc:
-                    logger.exception("Failed to write separate audit log for creation error: %s", audit_exc)
-                raise
 
-            # Update request as approved
-            request.status = TaskCreationRequestStatus.approved.value
-            request.review_comment = payload.comment
-            request.reviewed_by = current_user.id
-            request.reviewed_at = datetime.utcnow()
-            request.approved_task_id = new_task.id
+                task_payload.sub_tasks = approved_sub_tasks
 
-            # Include override diff in audit details
-            audit_details = {
-                "task_id": new_task.id,
-                "sub_tasks_count": len(created_sub_tasks),
-                "requested_payload": payload_body,
-                "created_task_snapshot": {
-                    **_serialize_task(new_task, include_sub_tasks=True),
-                    "sub_tasks": [_serialize_sub_task(st) for st in created_sub_tasks],
-                },
-            }
-            if override_diff:
-                audit_details["override_diff"] = override_diff
-
-            audit_details = jsonable_encoder(audit_details)
-
-            log_audit_event(
-                db=db,
-                action="APPROVE",
-                entity_type="task_creation_request",
-                entity_id=request.id,
-                user_id=current_user.id,
-                message="Task creation request approved",
-                details=audit_details,
+        # Create the task (will be committed with this transaction)
+        try:
+            new_task, created_sub_tasks = _create_task_from_payload(
+                db,
+                task_payload,
+                creator_id=request.requested_by,
+                current_user=current_user,
             )
+        except Exception as exc:
+            # Audit creation failure in separate session; keep main exception semantics
+            try:
+                separate_session = SessionLocal()
+                log_audit_event(
+                    db=separate_session,
+                    action="APPROVE_FAILED",
+                    entity_type="task_creation_request",
+                    entity_id=request.id,
+                    user_id=current_user.id,
+                    message="Task creation request approval failed - task creation error",
+                    details={"error": str(exc)},
+                )
+                separate_session.commit()
+                separate_session.close()
+            except Exception as audit_exc:
+                logger.exception("Failed to write separate audit log for creation error: %s", audit_exc)
+            raise
 
-            db.flush()
-            # leaving context manager will commit
-            db.refresh(request)
-            return _serialize_task_creation_request(request)
+        # Update request as approved
+        request.status = TaskCreationRequestStatus.approved.value
+        request.review_comment = payload.comment
+        request.reviewed_by = current_user.id
+        request.reviewed_at = datetime.utcnow()
+        request.approved_task_id = new_task.id
+
+        # Include override diff in audit details
+        audit_details = {
+            "task_id": new_task.id,
+            "sub_tasks_count": len(created_sub_tasks),
+            "requested_payload": payload_body,
+            "created_task_snapshot": {
+                **_serialize_task(new_task, include_sub_tasks=True),
+                "sub_tasks": [_serialize_sub_task(st) for st in created_sub_tasks],
+            },
+        }
+        if override_diff:
+            audit_details["override_diff"] = override_diff
+
+        audit_details = jsonable_encoder(audit_details)
+
+        log_audit_event(
+            db=db,
+            action="APPROVE",
+            entity_type="task_creation_request",
+            entity_id=request.id,
+            user_id=current_user.id,
+            message="Task creation request approved",
+            details=audit_details,
+        )
+
+        db.flush()
+        db.commit()
+        db.refresh(request)
+        return _serialize_task_creation_request(request)
     except HTTPException:
+        db.rollback()
         raise
     except Exception:
-        # Unexpected exceptions should propagate (they'll rollback the transaction)
+        db.rollback()
         raise
 
 
