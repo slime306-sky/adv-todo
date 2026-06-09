@@ -151,6 +151,8 @@ class SubTaskTimelineItem(BaseModel):
     estimated_hours: float
     actual_hours: float
     expected_hours: float
+    start_date: datetime | None = None
+    end_date: datetime | None = None
 
 
 class TaskTimelineResponse(BaseModel):

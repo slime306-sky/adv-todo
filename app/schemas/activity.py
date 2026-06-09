@@ -8,6 +8,7 @@ from app.schemas.user import UserReference
 class ActivityCreate(BaseModel):
     title: str
     description: str
+    note: str | None = None
     date: DateType
     sub_task_id: int
 
@@ -15,6 +16,7 @@ class ActivityCreate(BaseModel):
 class ActivityUpdate(BaseModel):
     title: str | None = None
     description: str | None = None
+    note: str | None = None
     date: DateType | None = None
     status: str | None = None
     sub_task_id: int | None = None
@@ -24,6 +26,7 @@ class ActivityResponse(BaseModel):
     id: int
     title: str
     description: str
+    note: str | None = None
     date: DateType
     status: str
     sub_task_id: int

@@ -1302,6 +1302,8 @@ def get_task_timeline(
                     _to_hours(sub_task.actual_days, sub_task.actual_hours), 2
                 ),
                 "expected_hours": expected_hours,
+                "start_date": sub_task.start_date,
+                "end_date": sub_task.end_date,
             }
         )
 

@@ -33,6 +33,7 @@ def _serialize_activity(activity: Activity):
         "id": activity.id,
         "title": activity.title,
         "description": activity.description,
+        "note": activity.note,
         "date": activity.date,
         "status": activity.status,
         "sub_task_id": activity.sub_task_id,
@@ -44,7 +45,7 @@ def _serialize_activity(activity: Activity):
 def create_activity(
     activity: ActivityCreate,
     db: Session = Depends(get_db),
-    admin: User = Depends(require_role("admin")),
+    current_user: User = Depends(get_current_user),
 ):
     sub_task = db.query(SubTask).filter(SubTask.id == activity.sub_task_id).first()
     if not sub_task:
@@ -57,9 +58,10 @@ def create_activity(
     new_activity = Activity(
         title=activity.title,
         description=activity.description,
+        note=activity.note,
         date=activity.date,
         sub_task_id=activity.sub_task_id,
-        created_by=admin.id,
+        created_by=current_user.id,
     )
 
     db.add(new_activity)
@@ -70,9 +72,9 @@ def create_activity(
         action="CREATE",
         entity_type="activity",
         entity_id=new_activity.id,
-        user_id=admin.id,
+        user_id=current_user.id,
         message="Activity created",
-        details={"sub_task_id": new_activity.sub_task_id, "title": new_activity.title},
+        details={"sub_task_id": new_activity.sub_task_id, "title": new_activity.title, "note": new_activity.note},
     )
     db.commit()
     return _serialize_activity(new_activity)
