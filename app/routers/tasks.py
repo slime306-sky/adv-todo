@@ -460,11 +460,18 @@ def create_task(
         # Store payload with explicit version wrapper and fingerprints
         payload_wrapper = jsonable_encoder(task)
         def _fingerprint_obj(st):
-            title = st.title or ""
-            desc = st.description or ""
-            days = st.estimated_days if st.estimated_days is not None else ""
-            hours = st.estimated_hours if st.estimated_hours is not None else ""
-            assignee = getattr(st, "assigned_to_username", "") or ""
+            if isinstance(st, dict):
+                title = st.get("title") or ""
+                desc = st.get("description") or ""
+                days = st.get("estimated_days") if st.get("estimated_days") is not None else ""
+                hours = st.get("estimated_hours") if st.get("estimated_hours") is not None else ""
+                assignee = st.get("assigned_to_username") or ""
+            else:
+                title = st.title or ""
+                desc = st.description or ""
+                days = st.estimated_days if st.estimated_days is not None else ""
+                hours = st.estimated_hours if st.estimated_hours is not None else ""
+                assignee = getattr(st, "assigned_to_username", "") or ""
             return f"{str(title).strip().lower()}|{str(desc).strip().lower()}|{str(days)}|{str(hours)}|{str(assignee).strip().lower()}"
 
         subtask_fps = []
