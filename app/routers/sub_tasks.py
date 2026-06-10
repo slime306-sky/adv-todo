@@ -632,6 +632,60 @@ def update_sub_task(
     db.refresh(sub_task)
     return _serialize_sub_task(sub_task)
 
+@router.put("/subtasks/{sub_task_id}/complete", response_model=SubTaskResponse)
+def complete_sub_task(
+    sub_task_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    sub_task = db.query(SubTask).filter(SubTask.id == sub_task_id).first()
+
+    if not sub_task:
+        raise api_error(
+            status_code=404,
+            code="SUBTASK_NOT_FOUND",
+            message="Sub task not found",
+        )
+
+    task = db.query(Task).filter(Task.id == sub_task.task_id).first()
+    if not task:
+        raise api_error(
+            status_code=404,
+            code="TASK_NOT_FOUND",
+            message="Task not found",
+        )
+
+    ensure_user_can_manage_task(task, current_user)
+
+    if sub_task.status == SubTaskStatus.complete.value:
+        raise api_error(
+            status_code=400,
+            code="SUBTASK_ALREADY_COMPLETE",
+            message="Sub task is already completed",
+        )
+
+    sub_task.status = SubTaskStatus.complete.value
+    sub_task.completed_at = datetime.utcnow()
+
+    _auto_fill_actual_time_on_completion(sub_task)
+
+    sync_task_completion_status(db, sub_task.task_id)
+
+    log_audit_event(
+        db=db,
+        action="COMPLETE",
+        entity_type="sub_task",
+        entity_id=sub_task.id,
+        user_id=current_user.id,
+        message="Sub task completed",
+        details={"task_id": sub_task.task_id},
+    )
+
+    db.commit()
+    db.refresh(sub_task)
+
+    return _serialize_sub_task(sub_task)
+
 
 @router.get("/subtask-update-requests/my", response_model=SubTaskUpdateRequestListResponse)
 def get_my_sub_task_update_requests(
