@@ -669,6 +669,8 @@ def complete_sub_task(
 
     _auto_fill_actual_time_on_completion(sub_task)
 
+    db.flush()
+
     sync_task_completion_status(db, sub_task.task_id)
 
     log_audit_event(
