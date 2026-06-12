@@ -325,6 +325,7 @@ def _create_task_from_payload(
     new_task = Task(
         title=task.title,
         description=task.description,
+        status=TaskStatus.in_progress.value,
         non_priority_flag=task.non_priority_flag,
         created_by=creator_id,
     )

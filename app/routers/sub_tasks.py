@@ -187,7 +187,7 @@ def sync_task_completion_status(db: Session, task_id: int):
     if completed_subtasks == total_subtasks:
         task.status = TaskStatus.complete.value
     else:
-        task.status = TaskStatus.not_complete.value
+        task.status = TaskStatus.in_progress.value
 
 
 def get_task_weightage_priority_total(db: Session, task_id: int) -> int:

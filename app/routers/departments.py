@@ -91,7 +91,6 @@ def assign_user_departments(
         return {"message": "User departments updated", "department_ids": []}
 
     departments = db.query(Department).filter(Department.id.in_(department_ids)).all()
-    print("departments found:", [d.id for d in departments])
     found_ids = {department.id for department in departments}
     missing_ids = [department_id for department_id in department_ids if department_id not in found_ids]
     if missing_ids:
@@ -101,12 +100,9 @@ def assign_user_departments(
             message="One or more departments not found",
             details=missing_ids,
         )
-    print("department_ids =", payload.department_ids)
+
     user.departments = departments
-    print(
-        "assigned:",
-        [d.id for d in user.departments]
-    )
+
     log_audit_event(
         db=db,
         action="UPDATE",
