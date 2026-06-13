@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.core.audit import log_audit_event
 from app.core.errors import api_error
 from app.core.security import get_current_user, get_db, require_role
+from app.core.timeline import build_sub_task_timing_fields
 from app.models.sub_task import SubTask, SubTaskPriority, SubTaskStatus
 from app.models.sub_task_update_request import SubTaskUpdateRequest, SubTaskUpdateRequestStatus
 from app.models.task import Task, TaskStatus
@@ -48,6 +49,7 @@ def _serialize_sub_task(sub_task: SubTask):
         "end_date": end_date,
         "actual_days": sub_task.actual_days,
         "actual_hours": sub_task.actual_hours,
+        **build_sub_task_timing_fields(sub_task),
         "created_at": sub_task.created_at,
         "completed_at": sub_task.completed_at,
         "task_id": sub_task.task_id,

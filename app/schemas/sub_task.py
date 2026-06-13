@@ -66,6 +66,10 @@ class SubTaskResponse(BaseModel):
     end_date: datetime | None = None
     actual_days: int
     actual_hours: int
+    total_estimated_hours: float
+    total_actual_hours: float
+    elapsed_hours: float
+    expected_completion_hours: float
     created_at: datetime
     completed_at: datetime | None = None
     task_id: int

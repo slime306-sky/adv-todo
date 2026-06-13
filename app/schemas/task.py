@@ -149,8 +149,9 @@ class SubTaskTimelineItem(BaseModel):
     status: str
     priority: int
     estimated_hours: float
+    elapsed_hours: float
+    expected_completion_hours: float
     actual_hours: float
-    expected_hours: float
     start_date: datetime | None = None
     end_date: datetime | None = None
 

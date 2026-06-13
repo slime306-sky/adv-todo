@@ -4,6 +4,11 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.security import get_current_user, get_db, require_role
+from app.core.timeline import (
+    calculate_elapsed_hours,
+    calculate_expected_completion_hours,
+    to_total_hours,
+)
 from app.models.sub_task import SubTask
 from app.models.task import Task, TaskStatus
 from app.models.user import User
@@ -82,6 +87,20 @@ def get_admin_task_summary(
     items = []
     for task in tasks:
         assignee = next((sub_task.assignee for sub_task in task.sub_tasks if sub_task.assignee), None)
+        total_estimated_hours = 0.0
+        total_actual_hours = 0.0
+        total_elapsed_hours = 0.0
+        total_expected_completion_hours = 0.0
+
+        for sub_task in task.sub_tasks:
+            total_estimated_hours += to_total_hours(sub_task.estimated_days, sub_task.estimated_hours)
+            total_actual_hours += to_total_hours(sub_task.actual_days, sub_task.actual_hours)
+            elapsed_hours = calculate_elapsed_hours(sub_task)
+            total_elapsed_hours += elapsed_hours
+            total_expected_completion_hours += calculate_expected_completion_hours(
+                sub_task, elapsed_hours
+            )
+
         items.append(
             {
                 "id": task.id,
@@ -90,6 +109,10 @@ def get_admin_task_summary(
                 "end_date": task.end_date,
                 "assignee": _serialize_user_reference(assignee, assignee.id if assignee else None),
                 "sub_task_count": len(task.sub_tasks),
+                "total_estimated_hours": round(total_estimated_hours, 2),
+                "total_actual_hours": round(total_actual_hours, 2),
+                "total_elapsed_hours": round(total_elapsed_hours, 2),
+                "total_expected_completion_hours": round(total_expected_completion_hours, 2),
             }
         )
 

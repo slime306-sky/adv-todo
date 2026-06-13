@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.core.audit import log_audit_event
 from app.core.errors import api_error
 from app.core.security import get_current_user, get_db, require_role
+from app.core.timeline import build_sub_task_timing_fields, to_total_hours
 import logging
 from app.core.database import SessionLocal
 from app.models.sub_task import SubTask, SubTaskStatus, SubTaskPriority
@@ -73,6 +74,7 @@ def _serialize_sub_task(sub_task: SubTask):
         "end_date": sub_task.calculate_end_date() if sub_task.start_date else None,
         "actual_days": sub_task.actual_days,
         "actual_hours": sub_task.actual_hours,
+        **build_sub_task_timing_fields(sub_task),
         "created_at": sub_task.created_at,
         "completed_at": sub_task.completed_at,
         "task_id": sub_task.task_id,
@@ -82,7 +84,7 @@ def _serialize_sub_task(sub_task: SubTask):
 
 
 def _to_hours(days: int, hours: int) -> float:
-    return float((days * 24) + hours)
+    return to_total_hours(days, hours)
 
 
 def _serialize_task(task: Task, include_sub_tasks: bool = False):
@@ -1282,26 +1284,12 @@ def get_task_timeline(
         _to_hours(sub_task.actual_days, sub_task.actual_hours) for sub_task in task.sub_tasks
     )
 
-    sub_task_count = len(task.sub_tasks)
-    total_priority = sum(sub_task.weightage_priority for sub_task in task.sub_tasks)
-
     sub_tasks_timeline = []
     total_expected_hours = 0.0
 
     for sub_task in task.sub_tasks:
-        if sub_task_count == 0:
-            weight = 0.0
-        elif total_priority > 0:
-            weight = sub_task.weightage_priority / total_priority
-        else:
-            weight = 1.0 / sub_task_count
-
-        expected_hours = (
-            round(total_estimated_hours * weight, 2)
-            if sub_task.status == SubTaskStatus.complete.value
-            else 0.0
-        )
-        total_expected_hours += expected_hours
+        timing = build_sub_task_timing_fields(sub_task)
+        total_expected_hours += timing["expected_completion_hours"]
 
         sub_tasks_timeline.append(
             {
@@ -1309,13 +1297,10 @@ def get_task_timeline(
                 "title": sub_task.title,
                 "status": sub_task.status,
                 "priority": sub_task.weightage_priority,
-                "estimated_hours": round(
-                    _to_hours(sub_task.estimated_days, sub_task.estimated_hours), 2
-                ),
-                "actual_hours": round(
-                    _to_hours(sub_task.actual_days, sub_task.actual_hours), 2
-                ),
-                "expected_hours": expected_hours,
+                "estimated_hours": timing["total_estimated_hours"],
+                "elapsed_hours": timing["elapsed_hours"],
+                "expected_completion_hours": timing["expected_completion_hours"],
+                "actual_hours": timing["total_actual_hours"],
                 "start_date": sub_task.start_date,
                 "end_date": sub_task.end_date,
             }
