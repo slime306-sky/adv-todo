@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.audit import log_audit_event
@@ -12,7 +13,7 @@ router = APIRouter(tags=["departments"])
 
 
 def _serialize_department(department: Department):
-    return {"id": department.id, "name": department.name}
+    return {"id": department.id, "name": department.name, "user_count": len(department.users)}
 
 
 @router.post("/departments", response_model=DepartmentResponse)
@@ -60,8 +61,17 @@ def get_departments(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    departments = db.query(Department).order_by(Department.name.asc()).all()
-    return [_serialize_department(department) for department in departments]
+    departments = (
+        db.query(Department, func.count(User.id).label("user_count"))
+        .outerjoin(Department.users)
+        .group_by(Department.id, Department.name)
+        .order_by(Department.name.asc())
+        .all()
+    )
+    return [
+        {"id": department.id, "name": department.name, "user_count": user_count}
+        for department, user_count in departments
+    ]
 
 
 @router.put("/users/{user_id}/departments")

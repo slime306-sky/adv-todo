@@ -8,6 +8,7 @@ class DepartmentCreate(BaseModel):
 class DepartmentResponse(BaseModel):
     id: int
     name: str
+    user_count: int = Field(ge=0, default=0)
 
     class Config:
         from_attributes = True
