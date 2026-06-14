@@ -108,7 +108,7 @@ This document lists all endpoints, descriptions, sample request payloads, and ex
     ```
 
 - GET /departments
-  - Description: List departments.
+  - Description: List departments and count of each department how many members are in that.
   - Auth: Any authenticated user
   - Response: list
 

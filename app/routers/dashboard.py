@@ -9,7 +9,7 @@ from app.core.timeline import (
     calculate_expected_completion_hours,
     to_total_hours,
 )
-from app.models.sub_task import SubTask
+from app.models.sub_task import SubTask, SubTaskStatus
 from app.models.task import Task, TaskStatus
 from app.models.user import User
 from app.schemas.dashboard import AdminTaskSummaryResponse, DashboardResponse
@@ -91,6 +91,7 @@ def get_admin_task_summary(
         total_actual_hours = 0.0
         total_elapsed_hours = 0.0
         total_expected_completion_hours = 0.0
+        completed_sub_task_count = 0
 
         for sub_task in task.sub_tasks:
             total_estimated_hours += to_total_hours(sub_task.estimated_days, sub_task.estimated_hours)
@@ -100,6 +101,8 @@ def get_admin_task_summary(
             total_expected_completion_hours += calculate_expected_completion_hours(
                 sub_task, elapsed_hours
             )
+            if sub_task.status == SubTaskStatus.complete.value:
+                completed_sub_task_count += 1
 
         items.append(
             {
@@ -109,6 +112,7 @@ def get_admin_task_summary(
                 "end_date": task.end_date,
                 "assignee": _serialize_user_reference(assignee, assignee.id if assignee else None),
                 "sub_task_count": len(task.sub_tasks),
+                "completed_sub_task_count": completed_sub_task_count,
                 "total_estimated_hours": round(total_estimated_hours, 2),
                 "total_actual_hours": round(total_actual_hours, 2),
                 "total_elapsed_hours": round(total_elapsed_hours, 2),

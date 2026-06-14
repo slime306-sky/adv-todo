@@ -32,6 +32,7 @@ class AdminTaskSummaryItem(BaseModel):
     end_date: datetime | None = None
     assignee: UserReference | None = None
     sub_task_count: int
+    completed_sub_task_count: int
     total_estimated_hours: float = 0.0
     total_actual_hours: float = 0.0
     total_elapsed_hours: float = 0.0
