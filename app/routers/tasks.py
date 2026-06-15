@@ -60,6 +60,25 @@ def _serialize_user_reference(user: User | None, fallback_id: int | None):
     return None
 
 
+def _serialize_department_reference(user: User | None):
+    if not user or not getattr(user, "departments", None):
+        return None
+
+    department = sorted(user.departments, key=lambda item: item.id)[0]
+    return {"id": department.id, "name": department.name}
+
+
+def _serialize_task_department_reference(task: Task):
+    sub_tasks = getattr(task, "sub_tasks", None) or []
+
+    for sub_task in sorted(sub_tasks, key=lambda item: item.id):
+        department = _serialize_department_reference(getattr(sub_task, "assignee", None))
+        if department:
+            return department
+
+    return None
+
+
 def _serialize_sub_task(sub_task: SubTask):
     return {
         "id": sub_task.id,
@@ -99,6 +118,7 @@ def _serialize_task(task: Task, include_sub_tasks: bool = False):
         "start_date": task.start_date,
         "end_date": task.end_date,
         "created_by": _serialize_user_reference(task.creator, task.created_by),
+        "department": _serialize_task_department_reference(task),
         "version": f"{task.version_major}.{task.version_minor}.{task.version_patch}",
         "parent_task_id": task.parent_task_id,
     }
@@ -168,26 +188,57 @@ def _serialize_task_creation_request(request: TaskCreationRequest):
     }
 
 
-def _enforce_admin_only_task_fields(current_user: User, task: TaskCreate):
-    """Ensure non-admins don't set restricted fields in task or nested subtasks."""
-    if current_user.role == "admin":
+def _validate_non_admin_task_priority_payload(task: TaskCreate):
+    """Allow non-admin priority requests only when every sub-task follows the same mode.
+
+    - non_priority_flag=True: no sub-task may explicitly set priority fields.
+    - non_priority_flag=False: either all sub-tasks provide both priority fields or none do.
+    """
+    if not task.sub_tasks:
         return
 
-    restricted_task_fields = {"weightage_priority", "subtask_priority"}
+    priority_field_set = {"weightage_priority", "subtask_priority"}
+    provided_modes: list[bool] = []
 
-    # Check nested subtasks
-    if task.sub_tasks:
-        for idx, sub_task in enumerate(task.sub_tasks):
-            # Only check fields that were explicitly set by the user
-            fields_set = getattr(sub_task, "model_fields_set", set())
-            attempted_fields = sorted(restricted_task_fields.intersection(fields_set))
-            if attempted_fields:
+    for idx, sub_task in enumerate(task.sub_tasks):
+        fields_set = getattr(sub_task, "model_fields_set", set())
+        provided_fields = priority_field_set.intersection(fields_set)
+        has_any_priority = bool(provided_fields)
+
+        if task.non_priority_flag:
+            if has_any_priority:
                 raise api_error(
-                    status_code=403,
-                    code="TASK_PRIORITY_ADMIN_ONLY",
-                    message="Only admins can set weightage_priority and subtask_priority in sub-tasks",
-                    details={"sub_task_index": idx, "restricted_fields": attempted_fields},
+                    status_code=400,
+                    code="NON_PRIORITY_TASK_HAS_PRIORITY_FIELDS",
+                    message="Non-priority tasks cannot include weightage_priority or subtask_priority",
+                    details={"sub_task_index": idx, "restricted_fields": sorted(provided_fields)},
                 )
+            continue
+
+        provided_modes.append(has_any_priority)
+
+        if has_any_priority and (sub_task.weightage_priority is None or sub_task.subtask_priority is None):
+            raise api_error(
+                status_code=400,
+                code="INCOMPLETE_SUBTASK_PRIORITY_FIELDS",
+                message="Each sub-task must include both weightage_priority and subtask_priority when using priority review",
+                details={"sub_task_index": idx, "provided_fields": sorted(provided_fields)},
+            )
+
+        if provided_fields and provided_fields != priority_field_set:
+            raise api_error(
+                status_code=400,
+                code="INCOMPLETE_SUBTASK_PRIORITY_FIELDS",
+                message="Each sub-task must include both weightage_priority and subtask_priority when using priority review",
+                details={"sub_task_index": idx, "provided_fields": sorted(provided_fields)},
+            )
+
+    if not task.non_priority_flag and provided_modes and any(provided_modes) and not all(provided_modes):
+        raise api_error(
+            status_code=400,
+            code="MIXED_SUBTASK_PRIORITY_REVIEW",
+            message="Provide weightage_priority and subtask_priority for every sub-task or for none of them",
+        )
 
 
 def _validate_approved_payload_safe_override(original_task: TaskCreate, override_task: TaskCreate | None) -> dict:
@@ -419,11 +470,9 @@ def create_task(
     current_user: User = Depends(get_current_user),
 ):
     if current_user.role != "admin":
-        # Validate that non-admins don't try to set restricted priority fields
-        _enforce_admin_only_task_fields(current_user, task)
-
         # Non-admin can create directly when the whole task is non-priority.
         if task.non_priority_flag:
+            _validate_non_admin_task_priority_payload(task)
             try:
                 new_task, created_sub_tasks = _create_task_from_payload(
                     db,
@@ -467,6 +516,8 @@ def create_task(
                 "sub_tasks": [_serialize_sub_task(sub_task) for sub_task in created_sub_tasks],
                 "sub_tasks_created_count": len(created_sub_tasks),
             }
+
+        _validate_non_admin_task_priority_payload(task)
 
         if task.sub_tasks:
             for subtask in task.sub_tasks:
@@ -920,7 +971,11 @@ def get_my_tasks(
     search: str | None = Query(default=None),
     status: str | None = Query(default=None),
 ):
-    query = db.query(Task).options(selectinload(Task.sub_tasks)).filter(
+    query = db.query(Task).options(
+        selectinload(Task.sub_tasks),
+        selectinload(Task.creator).selectinload(User.departments),
+        selectinload(Task.sub_tasks).selectinload(SubTask.assignee).selectinload(User.departments),
+    ).filter(
         or_(
             Task.created_by == current_user.id,
             Task.id.in_(db.query(SubTask.task_id).filter(SubTask.assigned_to == current_user.id)),
@@ -1151,7 +1206,9 @@ def get_all_tasks_admin(
     search: str | None = Query(default=None),
     status: str | None = Query(default=None),
 ):
-    query = db.query(Task)
+    query = db.query(Task).options(
+        selectinload(Task.sub_tasks).selectinload(SubTask.assignee).selectinload(User.departments),
+    )
 
     if status:
         query = query.filter(Task.status == status)
@@ -1186,6 +1243,7 @@ def get_all_tasks_admin(
                 "start_date": task.start_date,
                 "end_date": task.end_date,
                 "created_by": _serialize_user_reference(task.creator, task.created_by),
+                "department": _serialize_task_department_reference(task),
             }
         )
 
@@ -1206,7 +1264,11 @@ def get_task_by_id(
 ):
     task = (
         db.query(Task)
-        .options(selectinload(Task.sub_tasks))
+        .options(
+            selectinload(Task.sub_tasks),
+            selectinload(Task.creator).selectinload(User.departments),
+            selectinload(Task.sub_tasks).selectinload(SubTask.assignee).selectinload(User.departments),
+        )
         .filter(Task.id == task_id)
         .first()
     )

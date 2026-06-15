@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field, root_validator
 from app.models.sub_task import SubTaskPriority, SubTaskStatus
 from app.models.task import TaskStatus
 from app.schemas.sub_task import SubTaskResponse
-from app.schemas.user import UserReference
+from app.schemas.user import DepartmentReference, UserReference
 
 
 class TaskSubTaskBase(BaseModel):
@@ -80,6 +80,7 @@ class TaskResponse(BaseModel):
     start_date: datetime | None = None
     end_date: datetime | None = None
     created_by: UserReference
+    department: DepartmentReference | None = None
     version: str
     parent_task_id: int | None = None
 
@@ -107,6 +108,7 @@ class TaskAdminResponse(BaseModel):
     start_date: datetime | None = None
     end_date: datetime | None = None
     created_by: UserReference
+    department: DepartmentReference | None = None
 
     class Config:
         from_attributes = True
