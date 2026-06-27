@@ -198,12 +198,16 @@ def _validate_non_admin_task_priority_payload(task: TaskCreate):
         return
 
     priority_field_set = {"weightage_priority", "subtask_priority"}
-    provided_modes: list[bool] = []
+    saw_complete_priority = False
+    saw_missing_priority = False
 
     for idx, sub_task in enumerate(task.sub_tasks):
         fields_set = getattr(sub_task, "model_fields_set", set())
         provided_fields = priority_field_set.intersection(fields_set)
-        has_any_priority = bool(provided_fields)
+        has_weightage = sub_task.weightage_priority is not None
+        has_subtask_priority = sub_task.subtask_priority is not None
+        has_any_priority = has_weightage or has_subtask_priority
+        has_all_priority = has_weightage and has_subtask_priority
 
         if task.non_priority_flag:
             if has_any_priority:
@@ -215,16 +219,6 @@ def _validate_non_admin_task_priority_payload(task: TaskCreate):
                 )
             continue
 
-        provided_modes.append(has_any_priority)
-
-        if has_any_priority and (sub_task.weightage_priority is None or sub_task.subtask_priority is None):
-            raise api_error(
-                status_code=400,
-                code="INCOMPLETE_SUBTASK_PRIORITY_FIELDS",
-                message="Each sub-task must include both weightage_priority and subtask_priority when using priority review",
-                details={"sub_task_index": idx, "provided_fields": sorted(provided_fields)},
-            )
-
         if provided_fields and provided_fields != priority_field_set:
             raise api_error(
                 status_code=400,
@@ -233,12 +227,77 @@ def _validate_non_admin_task_priority_payload(task: TaskCreate):
                 details={"sub_task_index": idx, "provided_fields": sorted(provided_fields)},
             )
 
-    if not task.non_priority_flag and provided_modes and any(provided_modes) and not all(provided_modes):
+        if has_any_priority and not has_all_priority:
+            raise api_error(
+                status_code=400,
+                code="INCOMPLETE_SUBTASK_PRIORITY_FIELDS",
+                message="Each sub-task must include both weightage_priority and subtask_priority when using priority review",
+                details={
+                    "sub_task_index": idx,
+                    "provided_fields": sorted(provided_fields),
+                    "weightage_priority": sub_task.weightage_priority,
+                    "subtask_priority": sub_task.subtask_priority,
+                },
+            )
+
+        if has_all_priority:
+            saw_complete_priority = True
+        else:
+            saw_missing_priority = True
+
+    if not task.non_priority_flag and saw_complete_priority and saw_missing_priority:
         raise api_error(
             status_code=400,
             code="MIXED_SUBTASK_PRIORITY_REVIEW",
             message="Provide weightage_priority and subtask_priority for every sub-task or for none of them",
         )
+
+
+def _get_non_admin_task_creation_mode(task: TaskCreate) -> str:
+    """Classify the non-admin create path.
+
+    Returns:
+    - "direct" when every sub-task has both priority fields populated.
+    - "approval" when no sub-task priority values are provided.
+    - raises when the payload mixes complete and missing priority data.
+    """
+    if not task.sub_tasks:
+        return "approval"
+
+    saw_complete_priority = False
+    saw_missing_priority = False
+
+    for idx, sub_task in enumerate(task.sub_tasks):
+        has_weightage = sub_task.weightage_priority is not None
+        has_subtask_priority = sub_task.subtask_priority is not None
+        has_any_priority = has_weightage or has_subtask_priority
+        has_all_priority = has_weightage and has_subtask_priority
+
+        if has_any_priority and not has_all_priority:
+            raise api_error(
+                status_code=400,
+                code="INCOMPLETE_SUBTASK_PRIORITY_FIELDS",
+                message="Each sub-task must include both weightage_priority and subtask_priority when using priority review",
+                details={
+                    "sub_task_index": idx,
+                    "weightage_priority": sub_task.weightage_priority,
+                    "subtask_priority": sub_task.subtask_priority,
+                },
+            )
+
+        if has_all_priority:
+            saw_complete_priority = True
+        else:
+            saw_missing_priority = True
+
+    if saw_complete_priority and saw_missing_priority:
+        raise api_error(
+            status_code=400,
+            code="MIXED_SUBTASK_PRIORITY_REVIEW",
+            message="Provide weightage_priority and subtask_priority for every sub-task or for none of them",
+        )
+
+    return "direct" if saw_complete_priority else "approval"
 
 
 def _validate_approved_payload_safe_override(original_task: TaskCreate, override_task: TaskCreate | None) -> dict:
@@ -508,6 +567,55 @@ def create_task(
                     "title": new_task.title,
                     "sub_tasks_count": len(created_sub_tasks),
                     "non_priority_flag": True,
+                },
+            )
+            db.commit()
+            return {
+                **_serialize_task(new_task, include_sub_tasks=True),
+                "sub_tasks": [_serialize_sub_task(sub_task) for sub_task in created_sub_tasks],
+                "sub_tasks_created_count": len(created_sub_tasks),
+            }
+
+        creation_mode = _get_non_admin_task_creation_mode(task)
+
+        if creation_mode == "direct":
+            _validate_non_admin_task_priority_payload(task)
+            try:
+                new_task, created_sub_tasks = _create_task_from_payload(
+                    db,
+                    task,
+                    creator_id=current_user.id,
+                    current_user=current_user,
+                )
+                db.commit()
+            except HTTPException:
+                db.rollback()
+                raise
+            except Exception as exc:
+                db.rollback()
+                raise api_error(
+                    status_code=500,
+                    code="TRANSACTION_FAILED",
+                    message="Failed to create task with subtasks",
+                    dev_message=str(exc),
+                )
+
+            db.refresh(new_task)
+            for sub_task in created_sub_tasks:
+                db.refresh(sub_task)
+
+            log_audit_event(
+                db=db,
+                action="CREATE",
+                entity_type="task",
+                entity_id=new_task.id,
+                user_id=current_user.id,
+                message="Task created",
+                details={
+                    "title": new_task.title,
+                    "sub_tasks_count": len(created_sub_tasks),
+                    "non_priority_flag": False,
+                    "priority_mode": "direct",
                 },
             )
             db.commit()
@@ -1351,7 +1459,13 @@ def get_task_timeline(
 
     for sub_task in task.sub_tasks:
         timing = build_sub_task_timing_fields(sub_task)
-        total_expected_hours += timing["expected_completion_hours"]
+
+        if sub_task.status == SubTaskStatus.complete.value:
+            expected_hours = timing["expected_completion_hours"]
+            if task.non_priority_flag:
+                total_expected_hours += expected_hours
+            else:
+                total_expected_hours += expected_hours * ((sub_task.weightage_priority or 0) / 100)
 
         sub_tasks_timeline.append(
             {

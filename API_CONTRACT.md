@@ -1,11 +1,11 @@
 # API Contract
 
-This document lists all endpoints, descriptions, sample request payloads, and expected responses.
+This document lists the current endpoints, descriptions, sample request payloads, and expected responses.
 
 **Auth**
 
 - POST /register
-  - Description: Create a new user (admin only).
+  - Description: Create a new user. Admin only.
   - Auth: Admin
   - Request payload:
     ```json
@@ -22,13 +22,13 @@ This document lists all endpoints, descriptions, sample request payloads, and ex
     ```
 
 - POST /login
-  - Description: Obtain JWT access token.
+  - Description: Obtain a JWT access token.
   - Auth: None
   - Request payload:
     ```json
     {"username": "jdoe", "password": "secret"}
     ```
-  - Success response (200):
+  - Success response:
     ```json
     {
       "access_token": "<token>",
@@ -40,7 +40,7 @@ This document lists all endpoints, descriptions, sample request payloads, and ex
     ```
 
 - POST /change-password
-  - Description: Change password for current user.
+  - Description: Change the current user's password.
   - Auth: Bearer token
   - Request payload:
     ```json
@@ -54,10 +54,9 @@ This document lists all endpoints, descriptions, sample request payloads, and ex
 **Users**
 
 - GET /users
-  - Description: List all users (admin only).
+  - Description: List all users. Admin only.
   - Auth: Admin
-  - Query: none
-  - Success response: list of users
+  - Response:
     ```json
     [
       {"id": 1, "name": "jdoe", "email": "jdoe@example.com", "role": "user", "departments": []}
@@ -65,28 +64,33 @@ This document lists all endpoints, descriptions, sample request payloads, and ex
     ```
 
 - PUT /users/{user_id}
-  - Description: Update user fields (admin only, not password).
+  - Description: Update user fields, but not password. Admin only.
   - Auth: Admin
-  - Request payload (example):
+  - Request payload:
     ```json
     {"email": "new@example.com", "role": "user"}
     ```
-  - Success response: updated user
+  - Success response:
     ```json
     {"id": 1, "name": "jdoe", "email": "new@example.com", "role": "user", "departments": []}
     ```
 
 - POST /users/remediate-passwords
-  - Description: Remediate legacy plaintext passwords (admin).
+  - Description: Remediate legacy plaintext passwords. Admin only.
   - Auth: Admin
   - Query params: `dry_run=true|false`, `limit=100`
   - Success response:
     ```json
-    {"processed_users": 2, "affected_users": [{"user_id":2,"username":"x","email":"x@e","temporary_password":"..."}]}
+    {
+      "processed_users": 2,
+      "affected_users": [
+        {"user_id": 2, "username": "x", "email": "x@e", "temporary_password": "..."}
+      ]
+    }
     ```
 
 - DELETE /users/{user_id}
-  - Description: Delete a user (admin). Admin cannot delete themselves.
+  - Description: Delete a user. Admin cannot delete themselves.
   - Auth: Admin
   - Success response:
     ```json
@@ -96,40 +100,43 @@ This document lists all endpoints, descriptions, sample request payloads, and ex
 **Departments**
 
 - POST /departments
-  - Description: Create department (admin only).
+  - Description: Create a department.
   - Auth: Admin
-  - Payload:
+  - Request payload:
     ```json
     {"name": "Engineering"}
     ```
-  - Response:
+  - Success response:
     ```json
-    {"id": 1, "name": "Engineering"}
+    {"id": 1, "name": "Engineering", "user_count": 0}
     ```
 
 - GET /departments
-  - Description: List departments and count of each department how many members are in that.
+  - Description: List departments with member counts.
   - Auth: Any authenticated user
-  - Response: list
+  - Success response:
+    ```json
+    [{"id": 1, "name": "Engineering", "user_count": 3}]
+    ```
 
 - PUT /users/{user_id}/departments
-  - Description: Assign departments to a user (admin).
+  - Description: Assign departments to a user.
   - Auth: Admin
-  - Payload:
+  - Request payload:
     ```json
-    {"department_ids": [1,2]}
+    {"department_ids": [1, 2]}
     ```
-  - Response:
+  - Success response:
     ```json
-    {"message":"User departments updated","department_ids":[1,2]}
+    {"message": "User departments updated", "department_ids": [1, 2]}
     ```
 
 **Dashboard**
 
 - GET /dashboard
-  - Description: Returns aggregated counts and recent tasks for current user (admin sees all).
+  - Description: Returns aggregated task counts and recent tasks for the current user. Admins see all tasks.
   - Auth: Any authenticated user
-  - Response (example):
+  - Success response:
     ```json
     {
       "total_tasks": 10,
@@ -137,14 +144,16 @@ This document lists all endpoints, descriptions, sample request payloads, and ex
       "in_progress_tasks": 3,
       "pending_tasks": 5,
       "overdue": 1,
-      "recent_tasks": [{"id":1,"title":"Task 1","status":"not complete","created_by":{"id":1,"name":"jdoe"}}]
+      "recent_tasks": [
+        {"id": 1, "title": "Task 1", "status": "not_complete", "created_by": {"id": 1, "name": "jdoe"}}
+      ]
     }
     ```
 
 - GET /timeline
-  - Description: Admin-only task summary list for frontend cards or timeline views.
+  - Description: Admin-only task summary list for timeline and overview cards.
   - Auth: Admin
-  - Response (example):
+  - Success response:
     ```json
     {
       "items": [
@@ -154,114 +163,377 @@ This document lists all endpoints, descriptions, sample request payloads, and ex
           "start_date": "2026-06-01T00:00:00Z",
           "end_date": "2026-06-05T00:00:00Z",
           "assignee": {"id": 1, "name": "udayshah"},
-          "sub_task_count": 4
+          "sub_task_count": 4,
+          "completed_sub_task_count": 2,
+          "total_estimated_hours": 24,
+          "total_actual_hours": 18,
+          "total_elapsed_hours": 19.5,
+          "total_expected_completion_hours": 17.25
         }
       ]
+    }
+    ```
+
+- GET /tasks/{task_id}/progress
+  - Description: Returns completion progress for a task.
+  - Auth: Any authenticated user with access to the task.
+  - Success response:
+    ```json
+    {
+      "task_id": 11,
+      "total_subtasks": 4,
+      "completed_subtasks": 2,
+      "progress_percentage": 50,
+      "is_completed": false
+    }
+    ```
+
+- GET /tasks/{task_id}/timeline
+  - Description: Returns estimated, actual, and expected timing breakdown for a task.
+  - Auth: Any authenticated user with access to the task.
+  - Notes: `total_expected_hours` counts completed sub-tasks only. For priority-based tasks, the completed sub-task expected hours are weighted by `priority` (`weightage_priority`).
+  - Success response:
+    ```json
+    {
+      "task_id": 11,
+      "task_title": "Build API",
+      "start_date": "2026-06-01T00:00:00Z",
+      "end_date": "2026-06-05T00:00:00Z",
+      "total_estimated_hours": 24,
+      "total_actual_hours": 18,
+      "total_expected_hours": 17.25,
+      "bars": [
+        {"key": "estimated", "label": "How much time it will take", "hours": 24, "percentage": 100},
+        {"key": "actual", "label": "How much time user took", "hours": 18, "percentage": 75},
+        {"key": "expected", "label": "How much time it should have taken", "hours": 17.25, "percentage": 71.88}
+      ],
+      "sub_tasks": []
     }
     ```
 
 **Audit Logs**
 
 - GET /audit-logs
-  - Description: List audit logs. Admin can query all, non-admins see their own logs only.
+  - Description: List audit logs. Admins can query all logs; non-admins see their own logs only.
   - Auth: Any authenticated user
   - Query filters: `action`, `entity_type`, `entity_id`, `user_id`, `search`, `start_date`, `end_date`, `page`, `page_size`
-  - Response (paginated list):
+  - Success response:
     ```json
-    {"items": [{"id":1,"action":"CREATE","entity_type":"task","entity_id":1,"message":"Task created","details":{},"user_id":1,"user":{"id":1,"name":"jdoe"},"created_at":"..."}],"total":1,"page":1,"page_size":20,"total_pages":1}
+    {
+      "items": [
+        {
+          "id": 1,
+          "action": "CREATE",
+          "entity_type": "task",
+          "entity_id": 1,
+          "message": "Task created",
+          "details": {},
+          "user_id": 1,
+          "user": {"id": 1, "name": "jdoe"},
+          "created_at": "..."
+        }
+      ],
+      "total": 1,
+      "page": 1,
+      "page_size": 20,
+      "total_pages": 1
+    }
     ```
 
 **Tasks**
 
 - POST /tasks
-  - Description: Create a task. Non-admins may require approval for priority fields.
-  - Auth: Authenticated user (admins create directly)
-  - Payload (example):
+  - Description: Create a task.
+  - Auth: Authenticated user
+  - Request payload:
     ```json
     {
       "title": "New Task",
       "description": "Details",
       "non_priority_flag": false,
       "sub_tasks": [
-        {"title":"Sub 1","description":"...","estimated_days":1,"estimated_hours":2,"assigned_to":2,"weightage_priority":50,"subtask_priority":"high"}
+        {
+          "title": "Sub 1",
+          "description": "...",
+          "estimated_days": 1,
+          "estimated_hours": 2,
+          "assigned_to": 2,
+          "weightage_priority": 50,
+          "subtask_priority": "high"
+        }
       ]
     }
     ```
+  - Creation paths:
+    - Admins create tasks directly, including priority tasks.
+    - Non-admins create non-priority tasks directly when `non_priority_flag` is `true`.
+    - Non-admins creating priority tasks create the task immediately when every sub-task includes both `weightage_priority` and `subtask_priority`.
+    - Non-admins creating priority tasks still receive a pending task creation request when no sub-task priority values are provided.
+    - Mixed, partial, or null sub-task priority input is rejected with validation error.
   - Responses:
-    - If created immediately (admin or non-priority task): returns created task with `sub_tasks` array and `sub_tasks_created_count`.
+    - Immediate create:
       ```json
-      {"id":1,"title":"New Task","description":"Details","status":"not complete","sub_tasks":[{"id":5,...}],"sub_tasks_created_count":1}
+      {
+        "id": 1,
+        "title": "New Task",
+        "description": "Details",
+        "non_priority_flag": false,
+        "status": "not_complete",
+        "estimated_days": 5,
+        "estimated_hours": 16,
+        "start_date": "2026-06-26T00:00:00Z",
+        "end_date": "2026-07-01T16:00:00Z",
+        "created_by": {"id": 1, "name": "jdoe"},
+        "department": null,
+        "version": "1.0.0",
+        "parent_task_id": null,
+        "sub_tasks": [{"id": 5, "title": "Sub 1", "task_id": 1}],
+        "sub_tasks_created_count": 1
+      }
       ```
-    - If non-admin and requires approval: returns a task creation request object `{id, requested_by, status, requested_payload, ...}`
+    - Priority creation request:
+      ```json
+      {
+        "id": 1,
+        "requested_by": {"id": 1, "name": "jdoe"},
+        "status": "pending",
+        "requested_payload": {},
+        "review_comment": null,
+        "reviewed_by": null,
+        "approved_task_id": null,
+        "created_at": "...",
+        "reviewed_at": null
+      }
+      ```
+    - Approved request outcome: the admin review endpoint creates the task from the stored payload and returns the task creation request in approved state with `approved_task_id` set.
+    - Approved requests can preserve user-supplied sub-task priority values or let the admin adjust them before approval.
 
 - GET /my-tasks
-  - Description: List tasks for current user (creator or assigned).
+  - Description: List tasks for the current user, either created by them or assigned to them.
   - Auth: Authenticated user
   - Query: `page`, `page_size`, `search`, `status`
-  - Response: paginated tasks with sub_tasks
+  - Success response: paginated task list with sub-tasks.
 
 - GET /tasks
-  - Description: Admin list of all tasks (admin only).
+  - Description: Admin list of all tasks.
   - Auth: Admin
   - Query: `page`, `page_size`, `search`, `status`
+  - Success response: paginated task list.
 
 - GET /tasks/{task_id}
-  - Description: Get task details including sub-tasks. User must have access.
+  - Description: Get task details including sub-tasks.
   - Auth: Authenticated user
-  - Response: task with `sub_tasks` list
+  - Success response: task object with `sub_tasks`.
 
 - PUT /tasks/{task_id}
-  - Description: Update a task. Non-admins create update requests unless updating non-priority fields only.
+  - Description: Update a task. Non-admins create update requests unless the task remains non-priority.
   - Auth: Authenticated user
-  - Payload example (partial):
+  - Request payload:
     ```json
     {"title": "Updated title", "non_priority_flag": true}
     ```
-  - Responses:
-    - If admin: returns updated task payload
-    - If non-admin and requires approval: returns task snapshot and creates update request
+  - Success response: updated task object.
 
 - PUT /tasks/{task_id}/complete
-  - Description: Mark task complete (user must have manage rights)
-  - Auth: Authenticated user
-  - Response:
+  - Description: Mark task complete.
+  - Auth: Authenticated user with task manage rights
+  - Success response:
     ```json
-    {"message":"Task marked complete"}
-    ```
-
-- DELETE /tasks/{task_id}
-  - Description: Delete a task (admin only).
-  - Auth: Admin
-  - Response:
-    ```json
-    {"message":"Task deleted successfully"}
+    {"message": "Task marked complete"}
     ```
 
 - POST /tasks/{task_id}/revise
-  - Description: Create a new version (bump) of a completed task (admin only).
+  - Description: Create a new version of a completed task.
   - Auth: Admin
-  - Payload (optional):
+  - Request payload:
     ```json
     {"bump_type": "minor"}
     ```
-  - Response: new task object (new version)
+  - Success response: new task object with incremented version and `parent_task_id` set.
 
-- PUT/POST /tasks/{task_id}/subtasks/priorities
-  - Description: Bulk-update sub-task priorities (admin only).
+- PUT /tasks/{task_id}/subtasks/priorities
+- POST /tasks/{task_id}/subtasks/priorities
+  - Description: Bulk-update all sub-task priorities. Admin only.
   - Auth: Admin
-  - Payload:
+  - Request payload:
     ```json
-    {"items": [{"sub_task_id":5, "weightage_priority":50}, {"sub_task_id":6, "weightage_priority":50}]}
+    {
+      "items": [
+        {"sub_task_id": 5, "weightage_priority": 50},
+        {"sub_task_id": 6, "weightage_priority": 50}
+      ]
+    }
     ```
+  - Success response:
+    ```json
+    {"task_id": 1, "total_priority": 100, "items": [{"sub_task_id": 5, "weightage_priority": 50}]}
+    ```
+
+- GET /task-creation-requests/my
+  - Description: List task creation requests made by the current user.
+  - Auth: Authenticated user
+  - Success response: paginated list of task creation requests.
+
+- GET /task-creation-requests
+  - Description: List all task creation requests. Admin only.
+  - Auth: Admin
+  - Query params: `status`, `page`, `page_size`
+  - Success response: paginated list of task creation requests.
+
+- PUT /task-creation-requests/{request_id}/approve
+  - Description: Approve a pending task creation request. Admin only.
+  - Auth: Admin
+  - Request payload:
+    ```json
+    {
+      "comment": "Approved",
+      "approved_payload": {
+        "non_priority_flag": false,
+        "sub_tasks": [
+          {"temporary_subtask_id": "abc", "weightage_priority": 50, "subtask_priority": "high"}
+        ]
+      }
+    }
+    ```
+  - Success response: task creation request object with approved status and `approved_task_id`.
+
+- PUT /task-creation-requests/{request_id}/reject
+  - Description: Reject a pending task creation request. Admin only.
+  - Auth: Admin
+  - Request payload:
+    ```json
+    {"comment": "Not approved"}
+    ```
+  - Success response: task creation request object with rejected status.
+
+- GET /task-update-requests/my
+  - Description: List task update requests made by the current user.
+  - Auth: Authenticated user
+  - Success response: paginated list of task update requests.
+
+- GET /task-update-requests
+  - Description: List all task update requests. Admin only.
+  - Auth: Admin
+  - Query params: `status`, `page`, `page_size`
+  - Success response: paginated list of task update requests.
+
+- PUT /task-update-requests/{request_id}/approve
+  - Description: Approve a pending task update request. Admin only.
+  - Auth: Admin
+  - Request payload:
+    ```json
+    {"comment": "Approved"}
+    ```
+  - Success response: task update request object with approved status.
+
+- PUT /task-update-requests/{request_id}/reject
+  - Description: Reject a pending task update request. Admin only.
+  - Auth: Admin
+  - Request payload:
+    ```json
+    {"comment": "Rejected"}
+    ```
+  - Success response: task update request object with rejected status.
+
+- DELETE /tasks/{task_id}
+  - Description: Delete a task. Admin only.
+  - Auth: Admin
+  - Success response:
+    ```json
+    {"message": "Task deleted successfully"}
+    ```
+
+**Sub Tasks**
+
+- POST /subtasks
+  - Description: Create a sub-task for a task.
+  - Auth: Authenticated user with manage rights on the task.
+  - Request payload:
+    ```json
+    {
+      "title": "Design schema",
+      "description": "Create initial tables",
+      "status": "not_complete",
+      "weightage_priority": 50,
+      "subtask_priority": "high",
+      "estimated_days": 1,
+      "estimated_hours": 8,
+      "start_date": "2026-06-01T00:00:00Z",
+      "task_id": 11,
+      "assigned_to": 2
+    }
+    ```
+  - Response: sub-task object with computed timing fields
+
+- GET /subtasks
+  - Description: List sub-tasks visible to the current user.
+  - Auth: Authenticated user
+  - Query: `page`, `page_size`, `search`, `status`, `task_id`
+
+- GET /subtasks/{sub_task_id}
+  - Description: Get a sub-task by id.
+  - Auth: Authenticated user with access to the parent task.
+
+- PUT /subtasks/{sub_task_id}
+  - Description: Update a sub-task.
+  - Auth: Authenticated user with access to the parent task.
+
+- PUT /subtasks/{sub_task_id}/complete
+  - Description: Mark a sub-task complete and auto-fill actual time.
+  - Auth: Authenticated user with access to the parent task.
+
+- GET /subtask-update-requests/my
+  - Description: List sub-task update requests made by the current user.
+  - Auth: Authenticated user
+
+- GET /subtask-update-requests
+  - Description: List all sub-task update requests.
+  - Auth: Admin
+
+- PUT /subtask-update-requests/{request_id}/approve
+  - Description: Approve a pending sub-task update request.
+  - Auth: Admin
+
+- PUT /subtask-update-requests/{request_id}/reject
+  - Description: Reject a pending sub-task update request.
+  - Auth: Admin
+
+- DELETE /subtasks/{sub_task_id}
+  - Description: Delete a sub-task.
+  - Auth: User with manage rights on the parent task, admin permitted.
   - Response:
     ```json
-    {"task_id":1, "total_priority":100, "items": [...]}
+    {"message": "Sub task deleted successfully"}
     ```
+
+**Activities**
+
+- POST /activities
+  - Description: Create an activity on a sub-task.
+  - Auth: Authenticated user with access to the parent task.
+  - Request payload:
+    ```json
+    {"title": "Code review", "description": "Review the schema changes", "note": "Add comments", "date": "2026-06-26", "sub_task_id": 5}
+    ```
+
+- PUT /activities/{activity_id}
+  - Description: Update an activity.
+  - Auth: Admin
+
+- DELETE /activities/{activity_id}
+  - Description: Delete an activity.
+  - Auth: Admin
+
+- GET /tasks/{task_id}/activities
+  - Description: List activities for a task.
+  - Auth: Authenticated user with access to the task.
+  - Query: `page`, `page_size`, `search`, `status`, `sub_task_id`
 
 - GET /tasks/{task_id}/timeline
   - Description: Get task timeline summary for chart rendering.
   - Auth: Authenticated user
   - Response: task timeline with bars and sub-task timing breakdown, including task `start_date` and `end_date`
+  - Notes: `total_expected_hours` counts completed sub-tasks only. For priority-based tasks, the completed sub-task expected hours are weighted by `priority` (`weightage_priority`).
   - Response example:
     ```json
     {
