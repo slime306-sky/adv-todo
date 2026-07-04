@@ -267,8 +267,8 @@ This document lists the current endpoints, descriptions, sample request payloads
   - Creation paths:
     - Admins create tasks directly, including priority tasks.
     - Non-admins create non-priority tasks directly when `non_priority_flag` is `true`.
-    - Non-admins creating priority tasks create the task immediately when every sub-task includes both `weightage_priority` and `subtask_priority`.
-    - Non-admins creating priority tasks still receive a pending task creation request when no sub-task priority values are provided.
+    - Non-admins creating priority tasks now submit a pending task creation request for admin review before the task is created.
+    - The stored request preserves the submitted sub-task priority values so the admin can approve or adjust them.
     - Mixed, partial, or null sub-task priority input is rejected with validation error.
   - Responses:
     - Immediate create:

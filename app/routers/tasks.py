@@ -576,55 +576,6 @@ def create_task(
                 "sub_tasks_created_count": len(created_sub_tasks),
             }
 
-        creation_mode = _get_non_admin_task_creation_mode(task)
-
-        if creation_mode == "direct":
-            _validate_non_admin_task_priority_payload(task)
-            try:
-                new_task, created_sub_tasks = _create_task_from_payload(
-                    db,
-                    task,
-                    creator_id=current_user.id,
-                    current_user=current_user,
-                )
-                db.commit()
-            except HTTPException:
-                db.rollback()
-                raise
-            except Exception as exc:
-                db.rollback()
-                raise api_error(
-                    status_code=500,
-                    code="TRANSACTION_FAILED",
-                    message="Failed to create task with subtasks",
-                    dev_message=str(exc),
-                )
-
-            db.refresh(new_task)
-            for sub_task in created_sub_tasks:
-                db.refresh(sub_task)
-
-            log_audit_event(
-                db=db,
-                action="CREATE",
-                entity_type="task",
-                entity_id=new_task.id,
-                user_id=current_user.id,
-                message="Task created",
-                details={
-                    "title": new_task.title,
-                    "sub_tasks_count": len(created_sub_tasks),
-                    "non_priority_flag": False,
-                    "priority_mode": "direct",
-                },
-            )
-            db.commit()
-            return {
-                **_serialize_task(new_task, include_sub_tasks=True),
-                "sub_tasks": [_serialize_sub_task(sub_task) for sub_task in created_sub_tasks],
-                "sub_tasks_created_count": len(created_sub_tasks),
-            }
-
         _validate_non_admin_task_priority_payload(task)
 
         if task.sub_tasks:
