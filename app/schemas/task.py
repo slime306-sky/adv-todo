@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field, root_validator
 
 from app.models.sub_task import SubTaskPriority, SubTaskStatus
 from app.models.task import TaskStatus
+from app.schemas.category import CategoryReference
 from app.schemas.sub_task import SubTaskResponse
 from app.schemas.user import DepartmentReference, UserReference
 
@@ -43,6 +44,7 @@ class TaskRequestBase(BaseModel):
     description: str
     non_priority_flag: bool = False
     sub_task_count: Annotated[int, Field(ge=0)] | None = None
+    department_id: int | None = None
 
     @root_validator(skip_on_failure=True)
     def validate_sub_task_count(cls, values):
@@ -81,6 +83,7 @@ class TaskResponse(BaseModel):
     end_date: datetime | None = None
     created_by: UserReference
     department: DepartmentReference | None = None
+    category: CategoryReference | None = None
     version: str
     parent_task_id: int | None = None
 
@@ -109,6 +112,7 @@ class TaskAdminResponse(BaseModel):
     end_date: datetime | None = None
     created_by: UserReference
     department: DepartmentReference | None = None
+    category: CategoryReference | None = None
 
     class Config:
         from_attributes = True
@@ -190,6 +194,8 @@ class TaskUpdate(BaseModel):
     description: str | None = None
     non_priority_flag: bool | None = None
     status: TaskStatus | None = None
+    department_id: int | None = None
+    category_id: int | None = None
 
 
 class TaskVersionBumpRequest(BaseModel):

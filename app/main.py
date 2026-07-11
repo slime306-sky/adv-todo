@@ -18,7 +18,8 @@ from app.core.errors import (
 )
 from app.core.security import is_supported_password_hash
 from app.models.user import User
-from app.routers import activities, audit_logs, auth, dashboard, departments, sub_tasks, tasks, users
+from app.models.category import Category
+from app.routers import activities, audit_logs, auth, categories, dashboard, departments, sub_tasks, tasks, users
 from sqlalchemy.exc import SQLAlchemyError
 
 
@@ -65,6 +66,16 @@ def _ensure_sqlite_tasks_columns():
                     text("ALTER TABLE tasks ADD COLUMN parent_task_id INTEGER")
                 )
 
+            if "department_id" not in existing_columns:
+                connection.execute(
+                    text("ALTER TABLE tasks ADD COLUMN department_id INTEGER")
+                )
+
+            if "category_id" not in existing_columns:
+                connection.execute(
+                    text("ALTER TABLE tasks ADD COLUMN category_id INTEGER")
+                )
+
             if "start_date" not in existing_columns:
                 connection.execute(
                     text("ALTER TABLE tasks ADD COLUMN start_date DATETIME")
@@ -102,6 +113,12 @@ def _ensure_sqlite_tasks_columns():
         )
         connection.execute(
             text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS parent_task_id INTEGER")
+        )
+        connection.execute(
+            text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS department_id INTEGER")
+        )
+        connection.execute(
+            text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS category_id INTEGER")
         )
         connection.execute(
             text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS start_date TIMESTAMP")
@@ -511,6 +528,7 @@ app.include_router(auth.router)
 app.include_router(tasks.router)
 app.include_router(users.router)
 app.include_router(departments.router)
+app.include_router(categories.router)
 app.include_router(activities.router)
 app.include_router(sub_tasks.router)
 app.include_router(audit_logs.router)

@@ -131,6 +131,28 @@ This document lists the current endpoints, descriptions, sample request payloads
     {"message": "User departments updated", "department_ids": [1, 2]}
     ```
 
+**Categories**
+
+- POST /categories
+  - Description: Create a category. Admin only.
+  - Auth: Admin
+  - Request payload:
+    ```json
+    {"name": "Bug"}
+    ```
+  - Success response:
+    ```json
+    {"id": 1, "name": "Bug"}
+    ```
+
+- DELETE /categories/{category_id}
+  - Description: Delete a category. Admin only.
+  - Auth: Admin
+  - Success response:
+    ```json
+    {"message": "Category deleted successfully"}
+    ```
+
 **Dashboard**
 
 - GET /dashboard
@@ -145,7 +167,7 @@ This document lists the current endpoints, descriptions, sample request payloads
       "pending_tasks": 5,
       "overdue": 1,
       "recent_tasks": [
-        {"id": 1, "title": "Task 1", "status": "not_complete", "created_by": {"id": 1, "name": "jdoe"}}
+        {"id": 1, "title": "Task 1", "status": "not complete", "created_by": {"id": 1, "name": "jdoe"}}
       ]
     }
     ```
@@ -251,6 +273,8 @@ This document lists the current endpoints, descriptions, sample request payloads
       "title": "New Task",
       "description": "Details",
       "non_priority_flag": false,
+      "department_id": 1,
+      "category_id": 1,
       "sub_tasks": [
         {
           "title": "Sub 1",
@@ -278,13 +302,14 @@ This document lists the current endpoints, descriptions, sample request payloads
         "title": "New Task",
         "description": "Details",
         "non_priority_flag": false,
-        "status": "not_complete",
+        "status": "not complete",
         "estimated_days": 5,
         "estimated_hours": 16,
         "start_date": "2026-06-26T00:00:00Z",
         "end_date": "2026-07-01T16:00:00Z",
         "created_by": {"id": 1, "name": "jdoe"},
-        "department": null,
+        "department": {"id": 1, "name": "Engineering"},
+        "category": {"id": 1, "name": "Bug"},
         "version": "1.0.0",
         "parent_task_id": null,
         "sub_tasks": [{"id": 5, "title": "Sub 1", "task_id": 1}],
@@ -330,7 +355,7 @@ This document lists the current endpoints, descriptions, sample request payloads
   - Auth: Authenticated user
   - Request payload:
     ```json
-    {"title": "Updated title", "non_priority_flag": true}
+    {"title": "Updated title", "non_priority_flag": true, "department_id": 2, "category_id": 2}
     ```
   - Success response: updated task object.
 
@@ -453,7 +478,6 @@ This document lists the current endpoints, descriptions, sample request payloads
     {
       "title": "Design schema",
       "description": "Create initial tables",
-      "status": "not_complete",
       "weightage_priority": 50,
       "subtask_priority": "high",
       "estimated_days": 1,
@@ -463,6 +487,7 @@ This document lists the current endpoints, descriptions, sample request payloads
       "assigned_to": 2
     }
     ```
+  - Note: Omit `status` on create to use the server default. If you provide it, valid values are `not complete` or `complete`.
   - Response: sub-task object with computed timing fields
 
 - GET /subtasks

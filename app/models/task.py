@@ -25,6 +25,8 @@ class Task(Base):
     estimated_hours = Column(Integer, default=0)
     start_date = Column(DateTime, nullable=True)
     end_date = Column(DateTime, nullable=True)
+    department_id = Column(Integer, ForeignKey("departments.id"), nullable=True)
+    category_id = Column(Integer, ForeignKey("categories.id", ondelete="SET NULL"), nullable=True)
 
     version_major = Column(Integer, default=1, nullable=False)
     version_minor = Column(Integer, default=0, nullable=False)
@@ -34,6 +36,8 @@ class Task(Base):
     created_by = Column(Integer, ForeignKey("users.id"))
 
     creator = relationship("User", foreign_keys=[created_by])
+    department = relationship("Department")
+    category = relationship("Category", back_populates="tasks")
     parent_task = relationship("Task", foreign_keys=[parent_task_id], remote_side="Task.id")
 
     @property

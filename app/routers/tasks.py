@@ -13,6 +13,8 @@ from app.core.security import get_current_user, get_db, require_role
 from app.core.timeline import build_sub_task_timing_fields, to_total_hours
 import logging
 from app.core.database import SessionLocal
+from app.models.category import Category
+from app.models.department import Department
 from app.models.sub_task import SubTask, SubTaskStatus, SubTaskPriority
 from app.models.task_creation_request import TaskCreationRequest, TaskCreationRequestStatus
 from app.models.sub_task_update_request import SubTaskUpdateRequest, SubTaskUpdateRequestStatus
@@ -68,7 +70,25 @@ def _serialize_department_reference(user: User | None):
     return {"id": department.id, "name": department.name}
 
 
+def _serialize_department_model(department: Department | None):
+    if not department:
+        return None
+
+    return {"id": department.id, "name": department.name}
+
+
+def _serialize_category_model(category: Category | None):
+    if not category:
+        return None
+
+    return {"id": category.id, "name": category.name}
+
+
 def _serialize_task_department_reference(task: Task):
+    department = _serialize_department_model(getattr(task, "department", None))
+    if department:
+        return department
+
     sub_tasks = getattr(task, "sub_tasks", None) or []
 
     for sub_task in sorted(sub_tasks, key=lambda item: item.id):
@@ -77,6 +97,40 @@ def _serialize_task_department_reference(task: Task):
             return department
 
     return None
+
+
+def _serialize_task_category_reference(task: Task):
+    return _serialize_category_model(getattr(task, "category", None))
+
+
+def _resolve_department(db: Session, department_id: int | None) -> Department | None:
+    if department_id is None:
+        return None
+
+    department = db.query(Department).filter(Department.id == department_id).first()
+    if not department:
+        raise api_error(
+            status_code=404,
+            code="DEPARTMENT_NOT_FOUND",
+            message="Department not found",
+        )
+
+    return department
+
+
+def _resolve_category(db: Session, category_id: int | None) -> Category | None:
+    if category_id is None:
+        return None
+
+    category = db.query(Category).filter(Category.id == category_id).first()
+    if not category:
+        raise api_error(
+            status_code=404,
+            code="CATEGORY_NOT_FOUND",
+            message="Category not found",
+        )
+
+    return category
 
 
 def _serialize_sub_task(sub_task: SubTask):
@@ -119,6 +173,7 @@ def _serialize_task(task: Task, include_sub_tasks: bool = False):
         "end_date": task.end_date,
         "created_by": _serialize_user_reference(task.creator, task.created_by),
         "department": _serialize_task_department_reference(task),
+        "category": _serialize_task_category_reference(task),
         "version": f"{task.version_major}.{task.version_minor}.{task.version_patch}",
         "parent_task_id": task.parent_task_id,
     }
@@ -434,11 +489,16 @@ def _create_task_from_payload(
     creator_id: int,
     current_user: User,
 ):
+    department = _resolve_department(db, task.department_id)
+    category = _resolve_category(db, task.category_id)
+
     new_task = Task(
         title=task.title,
         description=task.description,
         status=TaskStatus.in_progress.value,
         non_priority_flag=task.non_priority_flag,
+        department_id=department.id if department else None,
+        category_id=category.id if category else None,
         created_by=creator_id,
     )
 
@@ -528,6 +588,9 @@ def create_task(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    _resolve_department(db, task.department_id)
+    _resolve_category(db, task.category_id)
+
     if current_user.role != "admin":
         # Non-admin can create directly when the whole task is non-priority.
         if task.non_priority_flag:
@@ -1032,6 +1095,8 @@ def get_my_tasks(
 ):
     query = db.query(Task).options(
         selectinload(Task.sub_tasks),
+        selectinload(Task.department),
+        selectinload(Task.category),
         selectinload(Task.creator).selectinload(User.departments),
         selectinload(Task.sub_tasks).selectinload(SubTask.assignee).selectinload(User.departments),
     ).filter(
@@ -1161,6 +1226,14 @@ def _apply_task_update(db: Session, task: Task, update_data: dict):
             )
         update_data["status"] = update_data["status"].value
 
+        if "department_id" in update_data:
+            department = _resolve_department(db, update_data["department_id"])
+            update_data["department_id"] = department.id if department else None
+
+        if "category_id" in update_data:
+            category = _resolve_category(db, update_data["category_id"])
+            update_data["category_id"] = category.id if category else None
+
     for key, value in update_data.items():
         setattr(task, key, value)
 
@@ -1266,6 +1339,8 @@ def get_all_tasks_admin(
     status: str | None = Query(default=None),
 ):
     query = db.query(Task).options(
+        selectinload(Task.department),
+        selectinload(Task.category),
         selectinload(Task.sub_tasks).selectinload(SubTask.assignee).selectinload(User.departments),
     )
 
@@ -1325,6 +1400,8 @@ def get_task_by_id(
         db.query(Task)
         .options(
             selectinload(Task.sub_tasks),
+            selectinload(Task.department),
+            selectinload(Task.category),
             selectinload(Task.creator).selectinload(User.departments),
             selectinload(Task.sub_tasks).selectinload(SubTask.assignee).selectinload(User.departments),
         )
@@ -1586,6 +1663,8 @@ def update_task(
             code="EMPTY_UPDATE_PAYLOAD",
             message="Provide at least one field to update",
         )
+
+    _resolve_department(db, update_data.get("department_id"))
 
     effective_non_priority_flag = update_data.get("non_priority_flag", task.non_priority_flag)
 

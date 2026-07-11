@@ -1,5 +1,6 @@
 ﻿from app.models.activity import Activity
 from app.models.audit_log import AuditLog
+from app.models.category import Category
 from app.models.department import Department
 from app.models.sub_task import SubTask, SubTaskStatus
 from app.models.sub_task_update_request import SubTaskUpdateRequest, SubTaskUpdateRequestStatus
@@ -14,6 +15,7 @@ __all__ = [
 	"TaskStatus",
 	"Activity",
 	"AuditLog",
+	"Category",
 	"Department",
 	"SubTask",
 	"SubTaskStatus",
