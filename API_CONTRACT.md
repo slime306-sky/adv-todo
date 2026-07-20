@@ -342,7 +342,7 @@ This document lists the current endpoints, descriptions, sample request payloads
 - GET /tasks
   - Description: Admin list of all tasks.
   - Auth: Admin
-  - Query: `page`, `page_size`, `search`, `status`
+  - Query: `page`, `page_size`, `search`, `status`, `department_id`
   - Success response: paginated task list.
 
 - GET /tasks/{task_id}

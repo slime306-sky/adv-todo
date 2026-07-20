@@ -1337,6 +1337,7 @@ def get_all_tasks_admin(
     page_size: int = Query(default=10, ge=1, le=100),
     search: str | None = Query(default=None),
     status: str | None = Query(default=None),
+    department_id: int | None = Query(default=None),
 ):
     query = db.query(Task).options(
         selectinload(Task.department),
@@ -1346,6 +1347,9 @@ def get_all_tasks_admin(
 
     if status:
         query = query.filter(Task.status == status)
+
+    if department_id:
+        query = query.filter(Task.department_id == department_id)
 
     if search:
         search_pattern = f"%{search.strip()}%"
