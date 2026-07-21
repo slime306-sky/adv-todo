@@ -471,9 +471,9 @@ This document lists the current endpoints, descriptions, sample request payloads
 **Sub Tasks**
 
 - POST /subtasks
-  - Description: Create a sub-task for a task.
+  - Description: Create one sub-task or multiple sub-tasks for a task in a single request.
   - Auth: Authenticated user with manage rights on the task.
-  - Request payload:
+  - Request payload (single):
     ```json
     {
       "title": "Design schema",
@@ -487,8 +487,35 @@ This document lists the current endpoints, descriptions, sample request payloads
       "assigned_to": 2
     }
     ```
+  - Request payload (multiple):
+    ```json
+    [
+      {
+        "title": "Design schema",
+        "description": "Create initial tables",
+        "weightage_priority": 50,
+        "subtask_priority": "high",
+        "estimated_days": 1,
+        "estimated_hours": 8,
+        "start_date": "2026-06-01T00:00:00Z",
+        "task_id": 11,
+        "assigned_to": 2
+      },
+      {
+        "title": "Write migration notes",
+        "description": "Document the data migration steps",
+        "weightage_priority": 30,
+        "subtask_priority": "medium",
+        "estimated_days": 1,
+        "estimated_hours": 4,
+        "start_date": "2026-06-02T00:00:00Z",
+        "task_id": 11,
+        "assigned_to": 2
+      }
+    ]
+    ```
   - Note: Omit `status` on create to use the server default. If you provide it, valid values are `not complete` or `complete`.
-  - Response: sub-task object with computed timing fields
+  - Response: a single sub-task object for single payloads, or a list of sub-task objects for bulk payloads, each with computed timing fields.
 
 - GET /subtasks
   - Description: List sub-tasks visible to the current user.
@@ -626,9 +653,9 @@ This document lists the current endpoints, descriptions, sample request payloads
 **Sub-tasks**
 
 - POST /subtasks
-  - Description: Create a sub-task. Non-admins may create and trigger approval requests for missing priority fields.
+  - Description: Create one sub-task or multiple sub-tasks. Non-admins may create and trigger approval requests for missing priority fields.
   - Auth: Authenticated user
-  - Payload example:
+  - Payload example (single):
     ```json
     {
       "title":"Sub 1",
@@ -641,7 +668,24 @@ This document lists the current endpoints, descriptions, sample request payloads
       "subtask_priority":"medium"
     }
     ```
-  - Response: created sub-task object
+  - Payload example (multiple):
+    ```json
+    [
+      {
+        "title":"Sub 1",
+        "task_id": 1,
+        "estimated_days":1,
+        "estimated_hours":2
+      },
+      {
+        "title":"Sub 2",
+        "task_id": 1,
+        "estimated_days":1,
+        "estimated_hours":3
+      }
+    ]
+    ```
+  - Response: created sub-task object for a single payload, or a list of created sub-task objects for a bulk payload.
 
 - GET /subtasks
   - Description: List sub-tasks (admin sees all, users restricted to their tasks/assignments).

@@ -356,35 +356,37 @@ def _apply_sub_task_update(db: Session, sub_task: SubTask, update_data: dict):
         sync_task_completion_status(db, sub_task.task_id)
 
 
-@router.post("/subtasks", response_model=SubTaskResponse)
-def create_sub_task(
-    sub_task: SubTaskCreate,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+def _create_sub_task_record(
+    db: Session,
+    current_user: User,
+    sub_task_payload: SubTaskCreate,
 ):
-    task = validate_task(db, sub_task.task_id)
+    task = validate_task(db, sub_task_payload.task_id)
     ensure_user_can_manage_task(task, current_user)
     task_non_priority_flag = task.non_priority_flag
 
     # Only validate weightage priority for admins
     if current_user.role == "admin":
-        if not task_non_priority_flag and sub_task.weightage_priority is not None:
-            projected_total = get_task_weightage_priority_total(db, sub_task.task_id) + sub_task.weightage_priority
+        if not task_non_priority_flag and sub_task_payload.weightage_priority is not None:
+            projected_total = (
+                get_task_weightage_priority_total(db, sub_task_payload.task_id)
+                + sub_task_payload.weightage_priority
+            )
             validate_weightage_priority_total(projected_total)
     else:
         # Non-admin: Check if they tried to set restricted fields
-        _enforce_admin_only_priority_fields(current_user, set(sub_task.__fields_set__))
+        _enforce_admin_only_priority_fields(current_user, set(sub_task_payload.__fields_set__))
 
     assigned_user = resolve_assigned_user(
         db=db,
-        assigned_to=sub_task.assigned_to,
-        assigned_to_username=sub_task.assigned_to_username,
+        assigned_to=sub_task_payload.assigned_to,
+        assigned_to_username=sub_task_payload.assigned_to_username,
         current_user=current_user,
     )
 
     needs_priority_approval = False
     if not task_non_priority_flag and (
-        sub_task.weightage_priority is None or sub_task.subtask_priority is None
+        sub_task_payload.weightage_priority is None or sub_task_payload.subtask_priority is None
     ):
         if current_user.role == "admin":
             raise api_error(
@@ -396,29 +398,33 @@ def create_sub_task(
 
     weightage_priority = (
         0
-        if task_non_priority_flag or sub_task.weightage_priority is None
-        else sub_task.weightage_priority
+        if task_non_priority_flag or sub_task_payload.weightage_priority is None
+        else sub_task_payload.weightage_priority
     )
     subtask_priority = (
         SubTaskPriority.medium.value
-        if task_non_priority_flag or sub_task.subtask_priority is None
-        else sub_task.subtask_priority.value
+        if task_non_priority_flag or sub_task_payload.subtask_priority is None
+        else sub_task_payload.subtask_priority.value
     )
 
     new_sub_task = SubTask(
-        title=sub_task.title,
-        description=sub_task.description,
-        status=sub_task.status.value,
+        title=sub_task_payload.title,
+        description=sub_task_payload.description,
+        status=sub_task_payload.status.value,
         non_priority_flag=task_non_priority_flag,
         weightage_priority=weightage_priority,
         subtask_priority=subtask_priority,
-        estimated_days=sub_task.estimated_days,
-        estimated_hours=sub_task.estimated_hours,
-        start_date=sub_task.start_date,
-        end_date=sub_task.start_date + timedelta(days=sub_task.estimated_days, hours=sub_task.estimated_hours) if sub_task.start_date else None,
-        actual_days=sub_task.actual_days,
-        actual_hours=sub_task.actual_hours,
-        task_id=sub_task.task_id,
+        estimated_days=sub_task_payload.estimated_days,
+        estimated_hours=sub_task_payload.estimated_hours,
+        start_date=sub_task_payload.start_date,
+        end_date=(
+            sub_task_payload.start_date + timedelta(days=sub_task_payload.estimated_days, hours=sub_task_payload.estimated_hours)
+            if sub_task_payload.start_date
+            else None
+        ),
+        actual_days=sub_task_payload.actual_days,
+        actual_hours=sub_task_payload.actual_hours,
+        task_id=sub_task_payload.task_id,
         created_by=current_user.id,
         assigned_to=assigned_user.id,
     )
@@ -429,12 +435,11 @@ def create_sub_task(
         _auto_fill_actual_time_on_completion(new_sub_task)
 
     db.add(new_sub_task)
-    recalculate_task_estimated_time(db, sub_task.task_id)
-    sync_task_completion_status(db, sub_task.task_id)
+    recalculate_task_estimated_time(db, sub_task_payload.task_id)
+    sync_task_completion_status(db, sub_task_payload.task_id)
     db.commit()
     db.refresh(new_sub_task)
 
-    # If non-admin and admin-only fields were not provided, create approval request
     if current_user.role != "admin" and needs_priority_approval:
         approval_request = SubTaskUpdateRequest(
             sub_task_id=new_sub_task.id,
@@ -442,7 +447,7 @@ def create_sub_task(
             status=SubTaskUpdateRequestStatus.pending.value,
             requested_changes={
                 "priority_fields_pending": True,
-                "note": "Waiting for admin to set weightage_priority and subtask_priority"
+                "note": "Waiting for admin to set weightage_priority and subtask_priority",
             },
         )
         db.add(approval_request)
@@ -467,6 +472,23 @@ def create_sub_task(
         details={"task_id": new_sub_task.task_id, "title": new_sub_task.title},
     )
     db.commit()
+    return new_sub_task
+
+
+@router.post("/subtasks", response_model=SubTaskResponse | list[SubTaskResponse])
+def create_sub_task(
+    payload: SubTaskCreate | list[SubTaskCreate],
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if isinstance(payload, list):
+        created_sub_tasks = [
+            _create_sub_task_record(db, current_user, sub_task)
+            for sub_task in payload
+        ]
+        return [_serialize_sub_task(sub_task) for sub_task in created_sub_tasks]
+
+    new_sub_task = _create_sub_task_record(db, current_user, payload)
     return _serialize_sub_task(new_sub_task)
 
 
