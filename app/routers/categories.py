@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.core.audit import log_audit_event
 from app.core.errors import api_error
-from app.core.security import get_db, require_role
+from app.core.security import get_db, require_role, get_current_user
 from app.models.category import Category
 from app.models.task import Task
 from app.models.user import User
@@ -87,3 +87,12 @@ def delete_category(
     )
     db.commit()
     return {"message": "Category deleted successfully"}
+
+
+@router.get("/categories", response_model=list[CategoryResponse])
+def get_categories(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    categories = db.query(Category).order_by(Category.name.asc()).all()
+    return [_serialize_category(c) for c in categories]

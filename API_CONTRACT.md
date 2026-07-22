@@ -145,6 +145,16 @@ This document lists the current endpoints, descriptions, sample request payloads
     {"id": 1, "name": "Bug"}
     ```
 
+- GET /categories
+  - Description: List all categories visible to the current user.
+  - Auth: Any authenticated user
+  - Success response:
+    ```json
+    [
+      {"id": 1, "name": "Bug"}
+    ]
+    ```
+
 - DELETE /categories/{category_id}
   - Description: Delete a category. Admin only.
   - Auth: Admin
