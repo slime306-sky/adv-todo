@@ -6,6 +6,7 @@ from app.core.audit import log_audit_event
 from app.core.errors import api_error
 from app.core.security import get_current_user, get_db, require_role
 from app.models.department import Department
+from app.models.task import Task
 from app.models.user import User
 from app.schemas.department import DepartmentCreate, DepartmentResponse, UserDepartmentAssignRequest
 
@@ -74,6 +75,58 @@ def get_departments(
     ]
 
 
+@router.put("/departments/{department_id}", response_model=DepartmentResponse)
+def update_department(
+    department_id: int,
+    payload: DepartmentCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("admin")),
+):
+    department = db.query(Department).filter(Department.id == department_id).first()
+    if not department:
+        raise api_error(
+            status_code=404,
+            code="DEPARTMENT_NOT_FOUND",
+            message="Department not found",
+        )
+
+    department_name = payload.name.strip()
+    if not department_name:
+        raise api_error(
+            status_code=400,
+            code="INVALID_DEPARTMENT_NAME",
+            message="Department name cannot be empty",
+        )
+
+    existing = (
+        db.query(Department)
+        .filter(Department.id != department.id)
+        .filter(Department.name.ilike(department_name))
+        .first()
+    )
+    if existing:
+        raise api_error(
+            status_code=409,
+            code="DEPARTMENT_ALREADY_EXISTS",
+            message="Department already exists",
+        )
+
+    department.name = department_name
+
+    log_audit_event(
+        db=db,
+        action="UPDATE",
+        entity_type="department",
+        entity_id=department.id,
+        user_id=current_user.id,
+        message="Department updated",
+        details={"name": department.name},
+    )
+    db.commit()
+    db.refresh(department)
+    return _serialize_department(department)
+
+
 @router.put("/users/{user_id}/departments")
 def assign_user_departments(
     user_id: int,
@@ -125,3 +178,39 @@ def assign_user_departments(
     db.commit()
 
     return {"message": "User departments updated", "department_ids": department_ids}
+
+
+@router.delete("/departments/{department_id}")
+def delete_department(
+    department_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("admin")),
+):
+    department = db.query(Department).filter(Department.id == department_id).first()
+    if not department:
+        raise api_error(
+            status_code=404,
+            code="DEPARTMENT_NOT_FOUND",
+            message="Department not found",
+        )
+
+    db.query(Task).filter(Task.department_id == department.id).update(
+        {Task.department_id: None},
+        synchronize_session=False,
+    )
+    department.users = []
+
+    log_audit_event(
+        db=db,
+        action="DELETE",
+        entity_type="department",
+        entity_id=department.id,
+        user_id=current_user.id,
+        message="Department deleted",
+        details={"name": department.name},
+    )
+
+    db.delete(department)
+    db.commit()
+
+    return {"message": "Department deleted successfully"}

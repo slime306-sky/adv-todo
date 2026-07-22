@@ -119,6 +119,26 @@ This document lists the current endpoints, descriptions, sample request payloads
     [{"id": 1, "name": "Engineering", "user_count": 3}]
     ```
 
+- PUT /departments/{department_id}
+  - Description: Update a department name.
+  - Auth: Admin
+  - Request payload:
+    ```json
+    {"name": "Product"}
+    ```
+  - Success response:
+    ```json
+    {"id": 1, "name": "Product", "user_count": 3}
+    ```
+
+- DELETE /departments/{department_id}
+  - Description: Delete a department. Tasks linked to the department are detached first.
+  - Auth: Admin
+  - Success response:
+    ```json
+    {"message": "Department deleted successfully"}
+    ```
+
 - PUT /users/{user_id}/departments
   - Description: Assign departments to a user.
   - Auth: Admin
