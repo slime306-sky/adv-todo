@@ -45,6 +45,7 @@ class TaskRequestBase(BaseModel):
     non_priority_flag: bool = False
     sub_task_count: Annotated[int, Field(ge=0)] | None = None
     department_id: int | None = None
+    category_id: int | None = None
 
     @root_validator(skip_on_failure=True)
     def validate_sub_task_count(cls, values):
