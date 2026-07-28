@@ -11,7 +11,7 @@ class SubTaskCreate(BaseModel):
     title: str
     description: str
     status: SubTaskStatus = SubTaskStatus.not_complete
-    weightage_priority: Annotated[int, Field(ge=0, le=100)] | None = None
+    weightage_priority: Annotated[int, Field(ge=0, le=10)] | None = None
     subtask_priority: SubTaskPriority | None = None
     estimated_days: Annotated[int, Field(ge=0)] = 0
     estimated_hours: Annotated[int, Field(ge=0, lt=24)] = 0
@@ -34,7 +34,7 @@ class SubTaskUpdate(BaseModel):
     title: str | None = None
     description: str | None = None
     status: SubTaskStatus | None = None
-    weightage_priority: Annotated[int, Field(ge=0, le=100)] | None = None
+    weightage_priority: Annotated[int, Field(ge=0, le=10)] | None = None
     subtask_priority: SubTaskPriority | None = None
     estimated_days: Annotated[int, Field(ge=0)] | None = None
     estimated_hours: Annotated[int, Field(ge=0, lt=24)] | None = None

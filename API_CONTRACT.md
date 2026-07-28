@@ -294,6 +294,8 @@ This document lists the current endpoints, descriptions, sample request payloads
 
 **Tasks**
 
+- Weightage inputs for priority sub-tasks are accepted on a 0-10 relative scale. The server automatically normalizes them so the stored weightages for each task sum to 100 while preserving relative ordering.
+
 - POST /tasks
   - Description: Create a task.
   - Auth: Authenticated user
@@ -312,7 +314,7 @@ This document lists the current endpoints, descriptions, sample request payloads
           "estimated_days": 1,
           "estimated_hours": 2,
           "assigned_to": 2,
-          "weightage_priority": 50,
+          "weightage_priority": 1,
           "subtask_priority": "high"
         }
       ]
@@ -361,7 +363,7 @@ This document lists the current endpoints, descriptions, sample request payloads
       }
       ```
     - Approved request outcome: the admin review endpoint creates the task from the stored payload and returns the task creation request in approved state with `approved_task_id` set.
-    - Approved requests can preserve user-supplied sub-task priority values or let the admin adjust them before approval.
+    - Approved requests can preserve user-supplied sub-task priority values or let the admin adjust them before approval. The server normalizes the final sub-task weightages to 100 automatically.
 
 - GET /my-tasks
   - Description: List tasks for the current user, either created by them or assigned to them.
@@ -414,14 +416,14 @@ This document lists the current endpoints, descriptions, sample request payloads
     ```json
     {
       "items": [
-        {"sub_task_id": 5, "weightage_priority": 50},
-        {"sub_task_id": 6, "weightage_priority": 50}
+        {"sub_task_id": 5, "weightage_priority": 1},
+        {"sub_task_id": 6, "weightage_priority": 9}
       ]
     }
     ```
   - Success response:
     ```json
-    {"task_id": 1, "total_priority": 100, "items": [{"sub_task_id": 5, "weightage_priority": 50}]}
+    {"task_id": 1, "total_priority": 100, "items": [{"sub_task_id": 5, "weightage_priority": 10}, {"sub_task_id": 6, "weightage_priority": 90}]}
     ```
 
 - GET /task-creation-requests/my
@@ -445,7 +447,7 @@ This document lists the current endpoints, descriptions, sample request payloads
       "approved_payload": {
         "non_priority_flag": false,
         "sub_tasks": [
-          {"temporary_subtask_id": "abc", "weightage_priority": 50, "subtask_priority": "high"}
+          {"temporary_subtask_id": "abc", "weightage_priority": 1, "subtask_priority": "high"}
         ]
       }
     }
@@ -500,6 +502,8 @@ This document lists the current endpoints, descriptions, sample request payloads
 
 **Sub Tasks**
 
+- Weightage inputs for create/update routes use a 0-10 relative scale. The server recalculates the stored task split automatically so the combined weightage stays at 100.
+
 - POST /subtasks
   - Description: Create one sub-task or multiple sub-tasks for a task in a single request.
   - Auth: Authenticated user with manage rights on the task.
@@ -508,7 +512,7 @@ This document lists the current endpoints, descriptions, sample request payloads
     {
       "title": "Design schema",
       "description": "Create initial tables",
-      "weightage_priority": 50,
+      "weightage_priority": 1,
       "subtask_priority": "high",
       "estimated_days": 1,
       "estimated_hours": 8,
@@ -523,7 +527,7 @@ This document lists the current endpoints, descriptions, sample request payloads
       {
         "title": "Design schema",
         "description": "Create initial tables",
-        "weightage_priority": 50,
+        "weightage_priority": 1,
         "subtask_priority": "high",
         "estimated_days": 1,
         "estimated_hours": 8,
@@ -534,7 +538,7 @@ This document lists the current endpoints, descriptions, sample request payloads
       {
         "title": "Write migration notes",
         "description": "Document the data migration steps",
-        "weightage_priority": 30,
+        "weightage_priority": 9,
         "subtask_priority": "medium",
         "estimated_days": 1,
         "estimated_hours": 4,
@@ -559,6 +563,7 @@ This document lists the current endpoints, descriptions, sample request payloads
 - PUT /subtasks/{sub_task_id}
   - Description: Update a sub-task.
   - Auth: Authenticated user with access to the parent task.
+  - Note: When `weightage_priority` is updated, the server automatically recalculates the task's full sub-task split so the stored total remains 100.
 
 - PUT /subtasks/{sub_task_id}/complete
   - Description: Mark a sub-task complete and auto-fill actual time.
@@ -649,6 +654,8 @@ This document lists the current endpoints, descriptions, sample request payloads
 
 **Task Creation & Update Requests**
 
+- Weightage values in task creation request payloads are also relative inputs on a 0-10 scale and are normalized server-side to a 100-point task split when the task is approved.
+
 - GET /task-creation-requests/my
   - Description: List my task creation requests.
   - Auth: Authenticated user
@@ -663,7 +670,7 @@ This document lists the current endpoints, descriptions, sample request payloads
   - Auth: Admin
   - Payload example:
     ```json
-    {"approved_payload": {"non_priority_flag": false, "sub_tasks": []}, "comment": "Approved"}
+    {"approved_payload": {"non_priority_flag": false, "sub_tasks": [{"temporary_subtask_id": "abc", "weightage_priority": 1, "subtask_priority": "high"}]}, "comment": "Approved"}
     ```
   - Response: the task creation request object with `approved_task_id` set
 
@@ -682,6 +689,8 @@ This document lists the current endpoints, descriptions, sample request payloads
 
 **Sub-tasks**
 
+- Weightage inputs use a 0-10 relative scale. The server normalizes the stored sub-task priorities so the task total is 100.
+
 - POST /subtasks
   - Description: Create one sub-task or multiple sub-tasks. Non-admins may create and trigger approval requests for missing priority fields.
   - Auth: Authenticated user
@@ -694,7 +703,7 @@ This document lists the current endpoints, descriptions, sample request payloads
       "estimated_days":1,
       "estimated_hours":2,
       "assigned_to":2,
-      "weightage_priority":50,
+      "weightage_priority":1,
       "subtask_priority":"medium"
     }
     ```
@@ -731,6 +740,7 @@ This document lists the current endpoints, descriptions, sample request payloads
   - Auth: Authenticated user
   - Payload: partial `SubTaskUpdate` fields
   - Response: updated sub-task or task snapshot if request created
+  - Note: Updating `weightage_priority` automatically rebalances the parent task's sub-task weights to keep the stored total at 100.
 
 - DELETE /subtasks/{sub_task_id}
   - Description: Delete a sub-task (user must have manage rights)

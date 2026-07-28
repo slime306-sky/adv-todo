@@ -26,6 +26,52 @@ router = APIRouter(tags=["sub-tasks"])
 PRIORITY_TOTAL_TARGET = 100
 
 
+def _normalize_weightage_priority_values(weightage_priorities: list[int | None]) -> list[int]:
+    if not weightage_priorities:
+        return []
+
+    sanitized = [max(0, int(value or 0)) for value in weightage_priorities]
+    total = sum(sanitized)
+
+    if total <= 0:
+        base = [PRIORITY_TOTAL_TARGET // len(sanitized)] * len(sanitized)
+        for index in range(PRIORITY_TOTAL_TARGET - sum(base)):
+            base[index] += 1
+        return base
+
+    scaled = [value * PRIORITY_TOTAL_TARGET / total for value in sanitized]
+    base = [int(floor(value)) for value in scaled]
+    remainder = PRIORITY_TOTAL_TARGET - sum(base)
+    fractional_parts = sorted(
+        ((scaled[index] - base[index], index) for index in range(len(sanitized))),
+        key=lambda item: (-item[0], item[1]),
+    )
+
+    for _, index in fractional_parts[:remainder]:
+        base[index] += 1
+
+    return base
+
+
+def _rebalance_task_weightage_priorities(db: Session, task_id: int):
+    task_sub_tasks = (
+        db.query(SubTask)
+        .filter(SubTask.task_id == task_id)
+        .order_by(SubTask.id.asc())
+        .all()
+    )
+
+    if not task_sub_tasks:
+        return
+
+    normalized_priorities = _normalize_weightage_priority_values(
+        [sub_task.weightage_priority for sub_task in task_sub_tasks]
+    )
+
+    for sub_task, normalized_priority in zip(task_sub_tasks, normalized_priorities):
+        sub_task.weightage_priority = normalized_priority
+
+
 def _serialize_user_reference(user: User | None, fallback_id: int | None):
     if user:
         return {"id": user.id, "name": user.username}
@@ -192,27 +238,6 @@ def sync_task_completion_status(db: Session, task_id: int):
         task.status = TaskStatus.in_progress.value
 
 
-def get_task_weightage_priority_total(db: Session, task_id: int) -> int:
-    return (
-        db.query(func.coalesce(func.sum(SubTask.weightage_priority), 0))
-        .filter(SubTask.task_id == task_id)
-        .scalar()
-        or 0
-    )
-
-
-def validate_weightage_priority_total(total_priority: int):
-    if total_priority != PRIORITY_TOTAL_TARGET:
-        raise api_error(
-            status_code=400,
-            code="INVALID_SUBTASK_WEIGHTAGE_PRIORITY_TOTAL",
-            message=(
-                "Sub-task weightage priorities for a task must sum to exactly 100. "
-                f"Current total would be {total_priority}."
-            ),
-        )
-
-
 def ensure_user_can_manage_task(task: Task, user: User):
     if user.role == "admin":
         return
@@ -295,38 +320,8 @@ def _normalize_update_data(db: Session, sub_task: SubTask, update_data: dict):
 
 
 def _validate_sub_task_update_constraints(db: Session, sub_task: SubTask, update_data: dict):
-    old_task_id = sub_task.task_id
-    new_task_id = update_data.get("task_id", old_task_id)
-    new_weightage_priority = update_data.get("weightage_priority", sub_task.weightage_priority)
-
-    old_task = validate_task(db, old_task_id)
-    new_task = validate_task(db, new_task_id)
-
-    if not old_task.non_priority_flag:
-        old_task_remaining_sub_tasks = (
-            db.query(SubTask)
-            .filter(SubTask.task_id == old_task_id)
-            .filter(SubTask.id != sub_task.id)
-            .all()
-        )
-        old_task_projected_total = sum(item.weightage_priority for item in old_task_remaining_sub_tasks)
-
-        if new_task_id == old_task_id:
-            if not new_task.non_priority_flag:
-                old_task_projected_total += new_weightage_priority
-            if old_task_remaining_sub_tasks:
-                validate_weightage_priority_total(old_task_projected_total)
-        elif old_task_remaining_sub_tasks:
-            validate_weightage_priority_total(old_task_projected_total)
-
-    if new_task_id != old_task_id and not new_task.non_priority_flag:
-        new_task_existing_sub_tasks = (
-            db.query(SubTask)
-            .filter(SubTask.task_id == new_task_id)
-            .all()
-        )
-        new_task_projected_total = sum(item.weightage_priority for item in new_task_existing_sub_tasks) + new_weightage_priority
-        validate_weightage_priority_total(new_task_projected_total)
+    validate_task(db, sub_task.task_id)
+    validate_task(db, update_data.get("task_id", sub_task.task_id))
 
 
 def _apply_sub_task_update(db: Session, sub_task: SubTask, update_data: dict):
@@ -365,15 +360,7 @@ def _create_sub_task_record(
     ensure_user_can_manage_task(task, current_user)
     task_non_priority_flag = task.non_priority_flag
 
-    # Only validate weightage priority for admins
-    if current_user.role == "admin":
-        if not task_non_priority_flag and sub_task_payload.weightage_priority is not None:
-            projected_total = (
-                get_task_weightage_priority_total(db, sub_task_payload.task_id)
-                + sub_task_payload.weightage_priority
-            )
-            validate_weightage_priority_total(projected_total)
-    else:
+    if current_user.role != "admin":
         # Non-admin: Check if they tried to set restricted fields
         _enforce_admin_only_priority_fields(current_user, set(sub_task_payload.__fields_set__))
 
@@ -435,6 +422,11 @@ def _create_sub_task_record(
         _auto_fill_actual_time_on_completion(new_sub_task)
 
     db.add(new_sub_task)
+    db.flush()
+
+    if not task_non_priority_flag and sub_task_payload.weightage_priority is not None:
+        _rebalance_task_weightage_priorities(db, task.id)
+
     recalculate_task_estimated_time(db, sub_task_payload.task_id)
     sync_task_completion_status(db, sub_task_payload.task_id)
     db.commit()
@@ -486,6 +478,14 @@ def create_sub_task(
             _create_sub_task_record(db, current_user, sub_task)
             for sub_task in payload
         ]
+        affected_task_ids = sorted({sub_task.task_id for sub_task in created_sub_tasks})
+        for task_id in affected_task_ids:
+            task = db.query(Task).filter(Task.id == task_id).first()
+            if task and not task.non_priority_flag:
+                _rebalance_task_weightage_priorities(db, task_id)
+        db.commit()
+        for sub_task in created_sub_tasks:
+            db.refresh(sub_task)
         return [_serialize_sub_task(sub_task) for sub_task in created_sub_tasks]
 
     new_sub_task = _create_sub_task_record(db, current_user, payload)
@@ -598,6 +598,7 @@ def update_sub_task(
     _normalize_update_data(db, sub_task, update_data)
     target_task_id = update_data.get("task_id", sub_task.task_id)
     target_task = validate_task(db, target_task_id)
+    old_task_id = sub_task.task_id
     if target_task.non_priority_flag:
         update_data["weightage_priority"] = 0
         update_data["subtask_priority"] = SubTaskPriority.medium.value
@@ -642,6 +643,15 @@ def update_sub_task(
         return _serialize_sub_task(sub_task)
 
     _apply_sub_task_update(db, sub_task, update_data)
+
+    if target_task_id != old_task_id:
+        old_task = validate_task(db, old_task_id)
+        if not old_task.non_priority_flag:
+            _rebalance_task_weightage_priorities(db, old_task_id)
+        if not target_task.non_priority_flag:
+            _rebalance_task_weightage_priorities(db, target_task_id)
+    elif not target_task.non_priority_flag and "weightage_priority" in update_data:
+        _rebalance_task_weightage_priorities(db, target_task_id)
 
     log_audit_event(
         db=db,
@@ -896,9 +906,6 @@ def delete_sub_task(
         .filter(SubTask.id != sub_task.id)
         .all()
     )
-    if remaining_priority_sub_tasks and not task.non_priority_flag:
-        projected_total = sum(item.weightage_priority for item in remaining_priority_sub_tasks)
-        validate_weightage_priority_total(projected_total)
 
     task_id = sub_task.task_id
     log_audit_event(
@@ -915,6 +922,8 @@ def delete_sub_task(
         SubTaskUpdateRequest.sub_task_id == sub_task.id
     ).delete(synchronize_session=False)
     db.query(SubTask).filter(SubTask.id == sub_task.id).delete(synchronize_session=False)
+    if remaining_priority_sub_tasks and not task.non_priority_flag:
+        _rebalance_task_weightage_priorities(db, task_id)
     recalculate_task_estimated_time(db, task_id)
     sync_task_completion_status(db, task_id)
     db.commit()

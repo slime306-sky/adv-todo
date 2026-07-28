@@ -23,11 +23,10 @@ from app.models.task_update_request import TaskUpdateRequest, TaskUpdateRequestS
 from app.models.user import User
 from app.routers.sub_tasks import (
     ensure_user_can_manage_task,
-    get_task_weightage_priority_total,
     recalculate_task_estimated_time,
     resolve_assigned_user,
     sync_task_completion_status,
-    validate_weightage_priority_total,
+    _normalize_weightage_priority_values,
 )
 from app.schemas.task import (
     TaskPriorityBulkUpdateRequest,
@@ -507,13 +506,12 @@ def _create_task_from_payload(
     db.flush()
 
     if task.sub_tasks:
-        provided_priorities = [
-            sub_task.weightage_priority
-            for sub_task in task.sub_tasks
-            if not task.non_priority_flag and sub_task.weightage_priority is not None
-        ]
-        if provided_priorities:
-            validate_weightage_priority_total(sum(provided_priorities))
+        if not task.non_priority_flag:
+            normalized_priorities = _normalize_weightage_priority_values(
+                [sub_task.weightage_priority for sub_task in task.sub_tasks]
+            )
+            for sub_task, normalized_priority in zip(task.sub_tasks, normalized_priorities):
+                sub_task.weightage_priority = normalized_priority
 
         for sub_task in task.sub_tasks:
             print(
@@ -964,6 +962,12 @@ def approve_task_creation_request(
                     )
 
                 task_payload.sub_tasks = approved_sub_tasks
+                if not task_payload.non_priority_flag:
+                    normalized_priorities = _normalize_weightage_priority_values(
+                        [sub_task.weightage_priority for sub_task in task_payload.sub_tasks]
+                    )
+                    for sub_task, normalized_priority in zip(task_payload.sub_tasks, normalized_priorities):
+                        sub_task.weightage_priority = normalized_priority
 
         # Create the task (will be committed with this transaction)
         try:
@@ -1621,17 +1625,18 @@ def update_task_sub_task_priorities(
             message="Payload sub-task ids must exactly match this task's sub-tasks",
         )
 
-    total_priority = sum(item.weightage_priority for item in payload.items)
-    validate_weightage_priority_total(total_priority)
+    normalized_priorities = _normalize_weightage_priority_values(
+        [item.weightage_priority for item in payload.items]
+    )
 
-    priority_map = {item.sub_task_id: item.weightage_priority for item in payload.items}
+    priority_map = {
+        item.sub_task_id: normalized_priority
+        for item, normalized_priority in zip(payload.items, normalized_priorities)
+    }
     for sub_task in task.sub_tasks:
         sub_task.weightage_priority = priority_map[sub_task.id]
 
     db.flush()
-    validate_weightage_priority_total(
-        get_task_weightage_priority_total(db, task_id)
-    )
 
     log_audit_event(
         db=db,
@@ -1640,14 +1645,17 @@ def update_task_sub_task_priorities(
         entity_id=task.id,
         user_id=current_user.id,
         message="Sub-task priorities updated in bulk",
-        details={"sub_task_count": len(payload.items), "total_priority": total_priority},
+        details={"sub_task_count": len(payload.items), "total_priority": sum(normalized_priorities)},
     )
     db.commit()
 
     return {
         "task_id": task.id,
-        "total_priority": total_priority,
-        "items": payload.items,
+        "total_priority": sum(normalized_priorities),
+        "items": [
+            item.model_copy(update={"weightage_priority": normalized_priority})
+            for item, normalized_priority in zip(payload.items, normalized_priorities)
+        ],
     }
 
 
