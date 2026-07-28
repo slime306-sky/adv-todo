@@ -647,6 +647,10 @@ def create_task(
 
         # Store payload with explicit version wrapper and fingerprints
         payload_wrapper = jsonable_encoder(task)
+        if isinstance(payload_wrapper, dict):
+            payload_wrapper["department_id"] = task.department_id
+            payload_wrapper["category_id"] = task.category_id
+
         def _fingerprint_obj(st):
             if isinstance(st, dict):
                 title = st.get("title") or ""
@@ -907,6 +911,8 @@ def approve_task_creation_request(
 
         override_diff = {}
         task_payload = original_task.model_copy(deep=True)
+        task_payload.department_id = original_task.department_id
+        task_payload.category_id = original_task.category_id
         if payload.approved_payload:
             override_diff = _validate_approved_payload_safe_override(original_task, payload.approved_payload)
             if payload.approved_payload.non_priority_flag is not None:
@@ -1231,13 +1237,13 @@ def _apply_task_update(db: Session, task: Task, update_data: dict):
             )
         update_data["status"] = update_data["status"].value
 
-        if "department_id" in update_data:
-            department = _resolve_department(db, update_data["department_id"])
-            update_data["department_id"] = department.id if department else None
+    if "department_id" in update_data:
+        department = _resolve_department(db, update_data["department_id"])
+        update_data["department_id"] = department.id if department else None
 
-        if "category_id" in update_data:
-            category = _resolve_category(db, update_data["category_id"])
-            update_data["category_id"] = category.id if category else None
+    if "category_id" in update_data:
+        category = _resolve_category(db, update_data["category_id"])
+        update_data["category_id"] = category.id if category else None
 
     for key, value in update_data.items():
         setattr(task, key, value)
