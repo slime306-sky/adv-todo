@@ -495,7 +495,8 @@ def create_sub_task(
         return [_serialize_sub_task(sub_task) for sub_task in created_sub_tasks]
 
     new_sub_task = _create_sub_task_record(db, current_user, payload)
-    return _serialize_sub_task(new_sub_task)
+    fresh_sub_task = db.query(SubTask).filter(SubTask.id == new_sub_task.id).first() or new_sub_task
+    return _serialize_sub_task(fresh_sub_task)
 
 
 @router.get("/subtasks", response_model=SubTaskListResponse)

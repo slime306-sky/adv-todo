@@ -1365,6 +1365,15 @@ def get_all_tasks_admin(
             or_(Task.title.ilike(search_pattern), Task.description.ilike(search_pattern))
         )
 
+    print(
+        query.statement.compile(
+            compile_kwargs={"literal_binds": True}
+        )
+    )
+
+    task = db.query(Task).filter(Task.id == 47).first()
+    print("department_id:", task.department_id)
+
     total = query.count()
     tasks = (
         query.order_by(Task.id.desc())
