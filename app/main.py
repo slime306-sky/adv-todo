@@ -262,6 +262,11 @@ def _ensure_sub_tasks_timeline_columns():
                     text("ALTER TABLE sub_tasks ADD COLUMN weightage_priority INTEGER NOT NULL DEFAULT 0")
                 )
 
+            if "raw_weightage_priority" not in existing_columns:
+                connection.execute(
+                    text("ALTER TABLE sub_tasks ADD COLUMN raw_weightage_priority INTEGER NOT NULL DEFAULT 0")
+                )
+
             if "non_priority_flag" not in existing_columns:
                 connection.execute(
                     text("ALTER TABLE sub_tasks ADD COLUMN non_priority_flag BOOLEAN NOT NULL DEFAULT 0")

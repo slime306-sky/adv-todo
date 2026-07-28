@@ -30,6 +30,7 @@ class SubTask(Base):
     description = Column(String)
     status = Column(String, default=SubTaskStatus.not_complete.value)
     non_priority_flag = Column(Boolean, default=False, nullable=False)
+    raw_weightage_priority = Column(Integer, default=0)
     weightage_priority = Column(Integer, default=0)
     subtask_priority = Column(String, default=SubTaskPriority.medium.value)
     estimated_days = Column(Integer, default=0)
