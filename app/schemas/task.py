@@ -83,6 +83,7 @@ class TaskResponse(BaseModel):
     start_date: datetime | None = None
     end_date: datetime | None = None
     created_by: UserReference
+    department_id: int | None = None
     department: DepartmentReference | None = None
     category: CategoryReference | None = None
     version: str
@@ -112,6 +113,7 @@ class TaskAdminResponse(BaseModel):
     start_date: datetime | None = None
     end_date: datetime | None = None
     created_by: UserReference
+    department_id: int | None = None
     department: DepartmentReference | None = None
     category: CategoryReference | None = None
 

@@ -171,6 +171,7 @@ def _serialize_task(task: Task, include_sub_tasks: bool = False):
         "start_date": task.start_date,
         "end_date": task.end_date,
         "created_by": _serialize_user_reference(task.creator, task.created_by),
+        "department_id": task.department_id,
         "department": _serialize_task_department_reference(task),
         "category": _serialize_task_category_reference(task),
         "version": f"{task.version_major}.{task.version_minor}.{task.version_patch}",
