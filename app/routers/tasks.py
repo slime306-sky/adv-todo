@@ -507,6 +507,12 @@ def _create_task_from_payload(
     db.flush()
 
     if task.sub_tasks:
+        for sub_task in task.sub_tasks:
+            if getattr(sub_task, "raw_weightage_priority", None) is None:
+                sub_task.raw_weightage_priority = (
+                    sub_task.weightage_priority if sub_task.weightage_priority is not None else 0
+                )
+
         if not task.non_priority_flag:
             normalized_priorities = _normalize_weightage_priority_values(
                 [sub_task.weightage_priority for sub_task in task.sub_tasks]
@@ -549,11 +555,16 @@ def _create_task_from_payload(
                 else sub_task.subtask_priority.value
             )
 
+            raw_weightage_priority = getattr(sub_task, "raw_weightage_priority", None)
+            if raw_weightage_priority is None:
+                raw_weightage_priority = weightage_priority or 0
+
             new_sub_task = SubTask(
                 title=sub_task.title,
                 description=sub_task.description,
                 status=sub_task.status.value,
                 non_priority_flag=task.non_priority_flag,
+                raw_weightage_priority=raw_weightage_priority,
                 weightage_priority=weightage_priority,
                 subtask_priority=subtask_priority,
                 estimated_days=sub_task.estimated_days,
@@ -962,15 +973,15 @@ def approve_task_creation_request(
                         )
 
                     original_st = original_task.sub_tasks[orig_idx]
-                    approved_sub_tasks.append(
-                        original_st.model_copy(
-                            update={
-                                "weightage_priority": override_st.weightage_priority,
-                                "subtask_priority": override_st.subtask_priority,
-                            },
-                            deep=True,
-                        )
+                    copied_sub_task = original_st.model_copy(
+                        update={
+                            "weightage_priority": override_st.weightage_priority,
+                            "subtask_priority": override_st.subtask_priority,
+                        },
+                        deep=True,
                     )
+                    copied_sub_task.raw_weightage_priority = override_st.weightage_priority or 0
+                    approved_sub_tasks.append(copied_sub_task)
 
                 task_payload.sub_tasks = approved_sub_tasks
                 if not task_payload.non_priority_flag:
@@ -1653,8 +1664,12 @@ def update_task_sub_task_priorities(
         item.sub_task_id: normalized_priority
         for item, normalized_priority in zip(payload.items, normalized_priorities)
     }
+    raw_priority_map = {
+        item.sub_task_id: item.weightage_priority or 0 for item in payload.items
+    }
     for sub_task in task.sub_tasks:
         sub_task.weightage_priority = priority_map[sub_task.id]
+        sub_task.raw_weightage_priority = raw_priority_map[sub_task.id]
 
     db.flush()
 

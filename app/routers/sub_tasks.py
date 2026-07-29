@@ -389,6 +389,10 @@ def _create_sub_task_record(
             )
         needs_priority_approval = True
 
+    raw_weightage_priority = 0
+    if not task_non_priority_flag and sub_task_payload.weightage_priority is not None:
+        raw_weightage_priority = sub_task_payload.weightage_priority
+
     weightage_priority = (
         0
         if task_non_priority_flag or sub_task_payload.weightage_priority is None
@@ -405,6 +409,7 @@ def _create_sub_task_record(
         description=sub_task_payload.description,
         status=sub_task_payload.status.value,
         non_priority_flag=task_non_priority_flag,
+        raw_weightage_priority=raw_weightage_priority,
         weightage_priority=weightage_priority,
         subtask_priority=subtask_priority,
         estimated_days=sub_task_payload.estimated_days,
