@@ -507,6 +507,12 @@ def _create_task_from_payload(
     db.flush()
 
     if task.sub_tasks:
+        # Capture original payload weightage values before normalization
+        payload_raws = [
+            (st.weightage_priority if st.weightage_priority is not None else 0)
+            for st in task.sub_tasks
+        ]
+
         if not task.non_priority_flag:
             normalized_priorities = _normalize_weightage_priority_values(
                 [sub_task.weightage_priority for sub_task in task.sub_tasks]
@@ -514,7 +520,7 @@ def _create_task_from_payload(
             for sub_task, normalized_priority in zip(task.sub_tasks, normalized_priorities):
                 sub_task.weightage_priority = normalized_priority
 
-        for sub_task in task.sub_tasks:
+        for idx, sub_task in enumerate(task.sub_tasks):
             print(
                 "SUBTASK:",
                 sub_task.title,
@@ -551,7 +557,10 @@ def _create_task_from_payload(
 
             raw_weightage_priority = getattr(sub_task, "raw_weightage_priority", None)
             if raw_weightage_priority is None:
-                raw_weightage_priority = weightage_priority or 0
+                # Use the original submitted value (payload_raws) rather than the
+                # normalized `weightage_priority` so `raw_weightage_priority` stores
+                # the incoming payload number.
+                raw_weightage_priority = payload_raws[idx] if idx < len(payload_raws) else (weightage_priority or 0)
 
             new_sub_task = SubTask(
                 title=sub_task.title,
