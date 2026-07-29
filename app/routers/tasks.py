@@ -507,12 +507,6 @@ def _create_task_from_payload(
     db.flush()
 
     if task.sub_tasks:
-        for sub_task in task.sub_tasks:
-            if getattr(sub_task, "raw_weightage_priority", None) is None:
-                sub_task.raw_weightage_priority = (
-                    sub_task.weightage_priority if sub_task.weightage_priority is not None else 0
-                )
-
         if not task.non_priority_flag:
             normalized_priorities = _normalize_weightage_priority_values(
                 [sub_task.weightage_priority for sub_task in task.sub_tasks]
