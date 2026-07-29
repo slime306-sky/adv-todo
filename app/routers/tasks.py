@@ -717,10 +717,6 @@ def create_task(
         db.refresh(creation_request)
         return _serialize_task_creation_request(creation_request)
 
-    if task.sub_tasks:
-        for subtask in task.sub_tasks:
-            subtask.raw_weightage_priority = subtask.weightage_priority if subtask.weightage_priority is not None else 0
-
     try:
         new_task, created_sub_tasks = _create_task_from_payload(
             db,
