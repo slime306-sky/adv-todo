@@ -681,12 +681,10 @@ def create_task(
                     subtask_fps.append(_fingerprint_obj(st_dict))
             else:
                 for st in task.sub_tasks:
-                    # Capture original payload weightage values (the "raw" values) before
-                    # any normalization so we can persist the exact incoming numbers.
-                    payload_raws: list[int] = [
-                        (sub.weightage_priority if sub.weightage_priority is not None else 0)
-                        for sub in task.sub_tasks
-                    ]
+                    subtask_fps.append(_fingerprint_obj(st))
+
+        if isinstance(payload_wrapper, dict):
+            payload_wrapper = {
                 "payload": payload_wrapper,
                 "version": getattr(TaskCreate, "__payload_version__", 1),
                 "subtask_fingerprints": subtask_fps,
@@ -704,11 +702,9 @@ def create_task(
             db=db,
             action="CREATE",
             entity_type="task_creation_request",
-                    # Prefer an explicit raw value if present on the subtask object,
-                    # otherwise use the captured payload raw value for this index.
-                    raw_weightage_priority = getattr(sub_task, "raw_weightage_priority", None)
-                    if raw_weightage_priority is None:
-                        raw_weightage_priority = payload_raws[idx] if idx < len(payload_raws) else (weightage_priority or 0)
+            entity_id=creation_request.id,
+            user_id=current_user.id,
+            message="Task creation approval requested",
             details={"title": task.title, "sub_tasks_count": len(task.sub_tasks or [])},
         )
         db.commit()
