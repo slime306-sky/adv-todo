@@ -66,14 +66,18 @@ def _rebalance_task_weightage_priorities(db: Session, task_id: int):
 
     # Prefer raw payload weight values when present so additions behave
     # the same as task creation (which normalizes from the original payload).
-    normalized_priorities = _normalize_weightage_priority_values(
-        [
-            (sub_task.raw_weightage_priority
-             if getattr(sub_task, "raw_weightage_priority", None) is not None
-             else sub_task.weightage_priority)
-            for sub_task in task_sub_tasks
-        ]
-    )
+    raw_values = [getattr(sub_task, "raw_weightage_priority", None) for sub_task in task_sub_tasks]
+
+    # If every raw value is either None or zero, treat raw as missing
+    # (this covers existing rows that were backfilled with DEFAULT 0).
+    use_raw = any((rv is not None and rv != 0) for rv in raw_values)
+
+    if use_raw:
+        source_values = [rv if (rv is not None) else sub_task.weightage_priority for sub_task, rv in zip(task_sub_tasks, raw_values)]
+    else:
+        source_values = [sub_task.weightage_priority for sub_task in task_sub_tasks]
+
+    normalized_priorities = _normalize_weightage_priority_values(source_values)
 
     for sub_task, normalized_priority in zip(task_sub_tasks, normalized_priorities):
         sub_task.weightage_priority = normalized_priority
