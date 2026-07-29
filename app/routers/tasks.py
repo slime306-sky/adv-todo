@@ -985,8 +985,9 @@ def approve_task_creation_request(
                         },
                         deep=True,
                     )
+                    approved_sub_tasks.append(copied_sub_task)
 
-                        sub_task.weightage_priority = normalized_priority
+                task_payload.sub_tasks = approved_sub_tasks
 
         # Create the task (will be committed with this transaction)
         try:
