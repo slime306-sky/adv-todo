@@ -985,15 +985,7 @@ def approve_task_creation_request(
                         },
                         deep=True,
                     )
-                    copied_sub_task.raw_weightage_priority = override_st.weightage_priority or 0
-                    approved_sub_tasks.append(copied_sub_task)
 
-                task_payload.sub_tasks = approved_sub_tasks
-                if not task_payload.non_priority_flag:
-                    normalized_priorities = _normalize_weightage_priority_values(
-                        [sub_task.weightage_priority for sub_task in task_payload.sub_tasks]
-                    )
-                    for sub_task, normalized_priority in zip(task_payload.sub_tasks, normalized_priorities):
                         sub_task.weightage_priority = normalized_priority
 
         # Create the task (will be committed with this transaction)
