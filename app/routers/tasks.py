@@ -697,6 +697,8 @@ def create_task(
                 "payload": payload_wrapper,
                 "version": getattr(TaskCreate, "__payload_version__", 1),
                 "subtask_fingerprints": subtask_fps,
+                "department_id": task.department_id,
+                "category_id": task.category_id,
             }
 
         creation_request = TaskCreationRequest(
@@ -869,6 +871,10 @@ def approve_task_creation_request(
         if isinstance(stored, dict) and "payload" in stored:
             payload_body = stored["payload"]
             stored_version = stored.get("version", 1)
+            if stored.get("department_id") is not None:
+                payload_body["department_id"] = stored["department_id"]
+            if stored.get("category_id") is not None:
+                payload_body["category_id"] = stored["category_id"]
         else:
             payload_body = stored
             stored_version = 1
