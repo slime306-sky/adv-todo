@@ -64,8 +64,15 @@ def _rebalance_task_weightage_priorities(db: Session, task_id: int):
     if not task_sub_tasks:
         return
 
+    # Prefer raw payload weight values when present so additions behave
+    # the same as task creation (which normalizes from the original payload).
     normalized_priorities = _normalize_weightage_priority_values(
-        [sub_task.weightage_priority for sub_task in task_sub_tasks]
+        [
+            (sub_task.raw_weightage_priority
+             if getattr(sub_task, "raw_weightage_priority", None) is not None
+             else sub_task.weightage_priority)
+            for sub_task in task_sub_tasks
+        ]
     )
 
     for sub_task, normalized_priority in zip(task_sub_tasks, normalized_priorities):
