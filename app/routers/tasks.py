@@ -601,6 +601,13 @@ def create_task(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    if task.department_id is None:
+        raise api_error(
+            status_code=422,
+            code="THERE_SHOULD_BE_DEPARTMENT_ID",
+            message="there should be department id in payload while creating task",
+        )
+
     _resolve_department(db, task.department_id)
     _resolve_category(db, task.category_id)
 
