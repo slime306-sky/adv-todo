@@ -191,6 +191,8 @@ def get_task_activities(
         .filter(SubTask.task_id == task_id)
     )
 
+
+
     if sub_task_id is not None:
         query = query.filter(Activity.sub_task_id == sub_task_id)
 

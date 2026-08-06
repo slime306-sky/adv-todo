@@ -12,6 +12,7 @@ from app.models.sub_task import SubTask, SubTaskPriority, SubTaskStatus
 from app.models.sub_task_update_request import SubTaskUpdateRequest, SubTaskUpdateRequestStatus
 from app.models.task import Task, TaskStatus
 from app.models.user import User
+from app.models.activity import Activity
 from app.schemas.sub_task import (
     SubTaskCreate,
     SubTaskListResponse,
@@ -719,6 +720,18 @@ def complete_sub_task(
             status_code=400,
             code="SUBTASK_ALREADY_COMPLETE",
             message="Sub task is already completed",
+        )
+
+    activities = (
+        db.query(Activity)
+        .join(SubTask, SubTask.id == Activity.sub_task_id)
+        .filter(SubTask.task_id == task_id)
+    )
+    if not activities:
+        raise api_error(
+            status_code=422,
+            code="NO_ACTIVITY_FOUND",
+            message="there should be atleast one activity",
         )
 
     sub_task.status = SubTaskStatus.complete.value
