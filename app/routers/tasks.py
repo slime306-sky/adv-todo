@@ -1391,9 +1391,6 @@ def get_all_tasks_admin(
         )
     )
 
-    task = db.query(Task).filter(Task.id == 47).first()
-    print("department_id:", task.department_id)
-
     total = query.count()
     tasks = (
         query.order_by(Task.id.desc())
