@@ -601,13 +601,6 @@ def create_task(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    if task.department_id is None:
-        raise api_error(
-            status_code=422,
-            code="THERE_SHOULD_BE_DEPARTMENT_ID",
-            message="there should be department_id in payload while creating task",
-        )
-
     if task.category_id is None:
         raise api_error(
             status_code=422,
@@ -737,6 +730,12 @@ def create_task(
         return _serialize_task_creation_request(creation_request)
 
     try:
+        if task.department_id is None:
+            raise api_error(
+                status_code=422,
+                code="THERE_SHOULD_BE_DEPARTMENT_ID",
+                message="there should be department_id in payload while creating task",
+            )
         new_task, created_sub_tasks = _create_task_from_payload(
             db,
             task,
