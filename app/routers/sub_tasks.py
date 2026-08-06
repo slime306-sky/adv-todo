@@ -722,7 +722,7 @@ def complete_sub_task(
             message="Sub task is already completed",
         )
 
-    activities = db.query(Activity).filter(sub_task_id=sub_task_id).first()
+    activities = db.query(Activity).filter(Activity.sub_task_id=sub_task_id).first()
     if not activities:
         raise api_error(
             status_code=422,
