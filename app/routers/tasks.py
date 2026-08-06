@@ -605,7 +605,14 @@ def create_task(
         raise api_error(
             status_code=422,
             code="THERE_SHOULD_BE_DEPARTMENT_ID",
-            message="there should be department id in payload while creating task",
+            message="there should be department_id in payload while creating task",
+        )
+
+    if task.category_id is None:
+        raise api_error(
+            status_code=422,
+            code="THERE_SHOULD_BE_CATEGORY_ID",
+            message="there should be category_id in payload while creating task",
         )
 
     _resolve_department(db, task.department_id)
