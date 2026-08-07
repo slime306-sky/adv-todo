@@ -578,7 +578,7 @@ This document lists the current endpoints, descriptions, sample request payloads
   - Auth: Admin
 
 - PUT /subtask-update-requests/{request_id}/approve
-  - Description: Approve a pending sub-task update request.
+  - Description: Approve a pending sub-task update request. Admins can also override `weightage_priority` and `subtask_priority` while approving.
   - Auth: Admin
 
 - PUT /subtask-update-requests/{request_id}/reject

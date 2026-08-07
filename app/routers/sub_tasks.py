@@ -848,7 +848,13 @@ def approve_sub_task_update_request(
         )
 
     update_data = dict(request.requested_changes or {})
+    if payload.weightage_priority is not None:
+        update_data["weightage_priority"] = payload.weightage_priority
+    if payload.subtask_priority is not None:
+        update_data["subtask_priority"] = payload.subtask_priority
+
     _normalize_update_data(db, sub_task, update_data)
+    old_task_id = sub_task.task_id
     target_task_id = update_data.get("task_id", sub_task.task_id)
     target_task = validate_task(db, target_task_id)
     if target_task.non_priority_flag:
@@ -857,6 +863,15 @@ def approve_sub_task_update_request(
 
     _validate_sub_task_update_constraints(db, sub_task, update_data)
     _apply_sub_task_update(db, sub_task, update_data)
+
+    if target_task_id != old_task_id:
+        old_task = validate_task(db, old_task_id)
+        if not old_task.non_priority_flag:
+            _rebalance_task_weightage_priorities(db, old_task_id)
+        if not target_task.non_priority_flag:
+            _rebalance_task_weightage_priorities(db, target_task_id)
+    elif not target_task.non_priority_flag and "weightage_priority" in update_data:
+        _rebalance_task_weightage_priorities(db, target_task_id)
 
     request.status = SubTaskUpdateRequestStatus.approved.value
     request.review_comment = payload.comment

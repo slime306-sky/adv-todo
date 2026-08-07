@@ -90,6 +90,8 @@ class SubTaskListResponse(BaseModel):
 
 class SubTaskUpdateRequestDecision(BaseModel):
     comment: str | None = None
+    weightage_priority: Annotated[int, Field(ge=0, le=10)] | None = None
+    subtask_priority: SubTaskPriority | None = None
 
 
 class SubTaskUpdateRequestResponse(BaseModel):
