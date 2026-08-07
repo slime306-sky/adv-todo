@@ -154,9 +154,14 @@ def resolve_assigned_user(
 
 
 def _serialize_sub_task_update_request(request: SubTaskUpdateRequest):
+    sub_task = request.sub_task
+    task = sub_task.task if sub_task else None
+
     return {
         "id": request.id,
         "sub_task_id": request.sub_task_id,
+        "sub_task_title": sub_task.title if sub_task else None,
+        "task_title": task.title if task else None,
         "requested_by": _serialize_user_reference(request.requester, request.requested_by),
         "status": request.status,
         "requested_changes": request.requested_changes,

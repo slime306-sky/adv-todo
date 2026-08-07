@@ -97,6 +97,8 @@ class SubTaskUpdateRequestDecision(BaseModel):
 class SubTaskUpdateRequestResponse(BaseModel):
     id: int
     sub_task_id: int
+    sub_task_title: str | None = None
+    task_title: str | None = None
     requested_by: UserReference
     status: str
     requested_changes: dict
