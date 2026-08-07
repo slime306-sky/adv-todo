@@ -1809,7 +1809,7 @@ def update_task(
 @router.post("/tasks/{task_id}/revise", response_model=TaskResponse)
 def revise_task(
     task_id: int,
-    payload: TaskVersionBumpRequest = TaskVersionBumpRequest(),
+    payload: TaskVersionBumpRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role("admin")),
 ):
@@ -1842,39 +1842,53 @@ def revise_task(
         next_minor = current_minor
         next_patch = current_patch + 1
 
-    new_version = Task(
+    revision_payload = TaskCreate(
         title=task.title,
         description=task.description,
-        status=TaskStatus.not_complete.value,
-        estimated_days=0,
-        estimated_hours=0,
-        created_by=current_user.id,
-        version_major=next_major,
-        version_minor=next_minor,
-        version_patch=next_patch,
-        parent_task_id=task.id,
+        non_priority_flag=task.non_priority_flag,
+        sub_tasks=payload.sub_tasks,
+        department_id=task.department_id,
+        category_id=task.category_id,
     )
 
-    db.add(new_version)
+    new_task, created_sub_tasks = _create_task_from_payload(
+        db,
+        revision_payload,
+        creator_id=current_user.id,
+        current_user=current_user,
+    )
+
+    new_task.status = TaskStatus.not_complete.value
+    new_task.version_major = next_major
+    new_task.version_minor = next_minor
+    new_task.version_patch = next_patch
+    new_task.parent_task_id = task.id
+    if payload.start_date is not None and payload.end_date is not None:
+        new_task.start_date = payload.start_date
+        new_task.end_date = payload.end_date
+
     db.commit()
-    db.refresh(new_version)
+    db.refresh(new_task)
+    for sub_task in created_sub_tasks:
+        db.refresh(sub_task)
 
     log_audit_event(
         db=db,
         action="REVISE",
         entity_type="task",
-        entity_id=new_version.id,
+        entity_id=new_task.id,
         user_id=current_user.id,
         message="New task version created",
         details={
             "previous_task_id": task.id,
             "new_version": f"{next_major}.{next_minor}.{next_patch}",
             "bump_type": payload.bump_type,
+            "sub_tasks_count": len(created_sub_tasks),
         },
     )
     db.commit()
 
-    return _serialize_task(new_version)
+    return _serialize_task(new_task)
 
 
 @router.delete("/tasks/{task_id}")

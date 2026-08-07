@@ -402,9 +402,23 @@ This document lists the current endpoints, descriptions, sample request payloads
 - POST /tasks/{task_id}/revise
   - Description: Create a new version of a completed task.
   - Auth: Admin
+  - Notes: The revised task is created as a fresh version and does not inherit old sub-tasks. A new `sub_tasks` array is required in the request.
   - Request payload:
     ```json
-    {"bump_type": "minor"}
+    {
+      "bump_type": "patch",
+      "start_date": "2026-08-01T09:00:00Z",
+      "end_date": "2026-08-05T17:00:00Z",
+      "sub_tasks": [
+        {
+          "title": "New planning",
+          "description": "Rewrite the plan for the revised task",
+          "estimated_days": 1,
+          "estimated_hours": 0,
+          "assigned_to": 2
+        }
+      ]
+    }
     ```
   - Success response: new task object with incremented version and `parent_task_id` set.
 
@@ -579,6 +593,12 @@ This document lists the current endpoints, descriptions, sample request payloads
 
 - PUT /subtask-update-requests/{request_id}/approve
   - Description: Approve a pending sub-task update request. Admins can also override `weightage_priority` and `subtask_priority` while approving.
+  - payload
+  {
+    "weightage_priority": 2,
+    "subtask_priority": "high",
+    "comment": "Approved after review."
+  }
   - Auth: Admin
 
 - PUT /subtask-update-requests/{request_id}/reject
