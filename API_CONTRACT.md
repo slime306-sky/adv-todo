@@ -413,6 +413,8 @@ This document lists the current endpoints, descriptions, sample request payloads
         {
           "title": "New planning",
           "description": "Rewrite the plan for the revised task",
+          "weightage_priority": 10,
+          "subtask_priority": "high",
           "estimated_days": 1,
           "estimated_hours": 0,
           "assigned_to": 2
@@ -420,6 +422,7 @@ This document lists the current endpoints, descriptions, sample request payloads
       ]
     }
     ```
+  - Notes: Revised subtasks can include `weightage_priority` and `subtask_priority` the same way as task creation.
   - Success response: new task object with incremented version and `parent_task_id` set.
 
 - PUT /tasks/{task_id}/subtasks/priorities
