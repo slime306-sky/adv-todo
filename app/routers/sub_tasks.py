@@ -378,10 +378,6 @@ def _create_sub_task_record(
     ensure_user_can_manage_task(task, current_user)
     task_non_priority_flag = task.non_priority_flag
 
-    if current_user.role != "admin":
-        # Non-admin: Check if they tried to set restricted fields
-        _enforce_admin_only_priority_fields(current_user, set(sub_task_payload.__fields_set__))
-
     assigned_user = resolve_assigned_user(
         db=db,
         assigned_to=sub_task_payload.assigned_to,
@@ -399,6 +395,7 @@ def _create_sub_task_record(
                 code="MISSING_PRIORITY_SUBTASK_FIELDS",
                 message="Priority sub-task must include weightage_priority and subtask_priority",
             )
+    if current_user.role != "admin" and not task_non_priority_flag:
         needs_priority_approval = True
 
     raw_weightage_priority = 0
@@ -456,14 +453,22 @@ def _create_sub_task_record(
     db.refresh(new_sub_task)
 
     if current_user.role != "admin" and needs_priority_approval:
+        requested_changes = {
+            "weightage_priority": sub_task_payload.weightage_priority,
+            "subtask_priority": (
+                sub_task_payload.subtask_priority.value
+                if isinstance(sub_task_payload.subtask_priority, SubTaskPriority)
+                else sub_task_payload.subtask_priority
+            ),
+        }
+        if sub_task_payload.weightage_priority is None or sub_task_payload.subtask_priority is None:
+            requested_changes["note"] = "Waiting for admin to set weightage_priority and subtask_priority"
+
         approval_request = SubTaskUpdateRequest(
             sub_task_id=new_sub_task.id,
             requested_by=current_user.id,
             status=SubTaskUpdateRequestStatus.pending.value,
-            requested_changes={
-                "priority_fields_pending": True,
-                "note": "Waiting for admin to set weightage_priority and subtask_priority",
-            },
+            requested_changes=requested_changes,
         )
         db.add(approval_request)
         log_audit_event(

@@ -692,7 +692,7 @@ This document lists the current endpoints, descriptions, sample request payloads
 - Weightage inputs use a 0-10 relative scale. The server normalizes the stored sub-task priorities so the task total is 100.
 
 - POST /subtasks
-  - Description: Create one sub-task or multiple sub-tasks. Non-admins may create and trigger approval requests for missing priority fields.
+  - Description: Create one sub-task or multiple sub-tasks. Non-admins may create and trigger approval requests for priority fields instead of getting a hard error.
   - Auth: Authenticated user
   - Payload example (single):
     ```json
