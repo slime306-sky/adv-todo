@@ -19,10 +19,10 @@ class TaskSubTaskBase(BaseModel):
     weightage_priority: Annotated[int, Field(ge=0, le=10)] | None = None
     subtask_priority: SubTaskPriority | None = None
     estimated_days: Annotated[int, Field(ge=0)] = 0
-    estimated_hours: Annotated[int, Field(ge=0, lt=24)] = 0
+    estimated_hours: Annotated[int, Field(ge=0)] = 0
     start_date: datetime | None = None
     actual_days: Annotated[int, Field(ge=0)] = 0
-    actual_hours: Annotated[int, Field(ge=0, lt=24)] = 0
+    actual_hours: Annotated[int, Field(ge=0)] = 0
     assigned_to: int | None = None
     assigned_to_username: str | None = None
 
@@ -205,22 +205,19 @@ class TaskVersionBumpRequest(BaseModel):
     bump_type: Literal["major", "minor", "patch"] = "patch"
     start_date: datetime | None = None
     end_date: datetime | None = None
+    sub_task_ids: list[int] | None = None
     sub_tasks: list[TaskSubTaskCreate] | None = None
 
     @root_validator(skip_on_failure=True)
     def validate_revision_dates(cls, values):
         start_date = values.get("start_date")
         end_date = values.get("end_date")
-        sub_tasks = values.get("sub_tasks")
 
         if (start_date is None) != (end_date is None):
             raise ValueError("start_date and end_date must be provided together")
 
         if start_date is not None and end_date is not None and end_date <= start_date:
             raise ValueError("end_date must be after start_date")
-
-        if not sub_tasks:
-            raise ValueError("sub_tasks are required when revising a task")
 
         return values
 

@@ -9,7 +9,7 @@ from app.models.activity import Activity
 from app.models.sub_task import SubTask
 from app.models.task import Task
 from app.models.user import User
-from app.routers.sub_tasks import ensure_user_can_manage_task
+from app.routers.sub_tasks import ensure_user_can_manage_sub_task
 from app.schemas.activity import (
     ActivityCreate,
     ActivityListResponse,
@@ -54,6 +54,16 @@ def create_activity(
             code="SUBTASK_NOT_FOUND",
             message="Sub task not found",
         )
+
+    task = db.query(Task).filter(Task.id == sub_task.task_id).first()
+    if not task:
+        raise api_error(
+            status_code=404,
+            code="TASK_NOT_FOUND",
+            message="Task not found",
+        )
+
+    ensure_user_can_manage_sub_task(sub_task, current_user, task)
 
     new_activity = Activity(
         title=activity.title,

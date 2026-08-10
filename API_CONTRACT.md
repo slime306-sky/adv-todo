@@ -402,27 +402,27 @@ This document lists the current endpoints, descriptions, sample request payloads
 - POST /tasks/{task_id}/revise
   - Description: Create a new version of a completed task.
   - Auth: Admin
-  - Notes: The revised task is created as a fresh version and does not inherit old sub-tasks. A new `sub_tasks` array is required in the request.
+  - Notes: The revised task is created as a fresh version and clones the original task's subtasks by default.
+  - Notes: Provide `sub_task_ids` to clone only specific existing subtasks. Send an empty list to clone no subtasks.
+  - Notes: Provide `sub_tasks` to add brand-new subtasks to the revised task.
   - Request payload:
     ```json
     {
       "bump_type": "patch",
       "start_date": "2026-08-01T09:00:00Z",
       "end_date": "2026-08-05T17:00:00Z",
+      "sub_task_ids": [5, 6],
       "sub_tasks": [
         {
           "title": "New planning",
-          "description": "Rewrite the plan for the revised task",
-          "weightage_priority": 10,
-          "subtask_priority": "high",
-          "estimated_days": 1,
-          "estimated_hours": 0,
+          "description": "Add a new subtask during revision",
+          "estimated_days": 0,
+          "estimated_hours": 4,
           "assigned_to": 2
         }
       ]
     }
     ```
-  - Notes: Revised subtasks can include `weightage_priority` and `subtask_priority` the same way as task creation.
   - Success response: new task object with incremented version and `parent_task_id` set.
 
 - PUT /tasks/{task_id}/subtasks/priorities

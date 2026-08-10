@@ -281,6 +281,28 @@ def ensure_user_can_manage_task(task: Task, user: User):
     )
 
 
+def ensure_user_can_manage_sub_task(sub_task: SubTask, user: User, task: Task | None = None):
+    if user.role == "admin":
+        return
+
+    task = task or sub_task.task
+
+    if sub_task.assigned_to == user.id:
+        return
+
+    if task.created_by == user.id:
+        return
+
+    if task.parent_task_id is not None and task.parent_task and task.parent_task.created_by == user.id:
+        return
+
+    raise api_error(
+        status_code=403,
+        code="FORBIDDEN_SUBTASK_ACCESS",
+        message="Not authorized to manage this sub-task",
+    )
+
+
 def validate_task(db: Session, task_id: int):
     task = db.query(Task).filter(Task.id == task_id).first()
     if not task:
@@ -617,7 +639,7 @@ def update_sub_task(
     existing_task = db.query(Task).filter(Task.id == sub_task.task_id).first()
     if not existing_task:
         raise api_error(status_code=404, code="TASK_NOT_FOUND", message="Task not found")
-    ensure_user_can_manage_task(existing_task, current_user)
+    ensure_user_can_manage_sub_task(sub_task, current_user, existing_task)
 
     update_data = sub_task_update.dict(exclude_unset=True)
     if not update_data:
@@ -723,7 +745,7 @@ def complete_sub_task(
             message="Task not found",
         )
 
-    ensure_user_can_manage_task(task, current_user)
+    ensure_user_can_manage_sub_task(sub_task, current_user, task)
 
     if sub_task.status == SubTaskStatus.complete.value:
         raise api_error(
@@ -955,7 +977,7 @@ def delete_sub_task(
     task = db.query(Task).filter(Task.id == sub_task.task_id).first()
     if not task:
         raise api_error(status_code=404, code="TASK_NOT_FOUND", message="Task not found")
-    ensure_user_can_manage_task(task, current_user)
+    ensure_user_can_manage_sub_task(sub_task, current_user, task)
 
     remaining_priority_sub_tasks = (
         db.query(SubTask)

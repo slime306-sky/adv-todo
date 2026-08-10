@@ -42,6 +42,7 @@ from app.schemas.task import (
     TaskProgressResponse,
     TaskResponse,
     TaskTimelineResponse,
+    TaskSubTaskCreate,
     TaskVersionBumpRequest,
     TaskUpdateRequestDecision,
     TaskUpdateRequestListResponse,
@@ -182,6 +183,55 @@ def _serialize_task(task: Task, include_sub_tasks: bool = False):
         payload["sub_tasks"] = [_serialize_sub_task(sub_task) for sub_task in task.sub_tasks]
 
     return payload
+
+
+def _clone_revision_sub_tasks(
+    task: Task,
+    sub_task_ids: list[int] | None = None,
+    new_sub_tasks: list[TaskSubTaskCreate] | None = None,
+):
+    original_sub_tasks = list(task.sub_tasks or [])
+    if sub_task_ids is None:
+        selected_sub_tasks = original_sub_tasks
+    elif not sub_task_ids:
+        selected_sub_tasks = []
+    else:
+        requested_ids = set(sub_task_ids)
+        selected_sub_tasks = [sub_task for sub_task in original_sub_tasks if sub_task.id in requested_ids]
+
+        missing_ids = requested_ids.difference({sub_task.id for sub_task in selected_sub_tasks})
+        if missing_ids:
+            raise api_error(
+                status_code=400,
+                code="INVALID_REVISION_SUBTASK_IDS",
+                message="One or more sub_task_ids do not belong to the task being revised",
+                details={"sub_task_ids": sorted(missing_ids)},
+            )
+
+    cloned_sub_tasks: list[TaskSubTaskCreate] = []
+    for original_sub_task in selected_sub_tasks:
+        cloned_sub_tasks.append(
+            TaskSubTaskCreate(
+                title=original_sub_task.title,
+                description=original_sub_task.description,
+                status=SubTaskStatus(original_sub_task.status),
+                weightage_priority=original_sub_task.weightage_priority,
+                subtask_priority=SubTaskPriority(original_sub_task.subtask_priority)
+                if original_sub_task.subtask_priority is not None
+                else None,
+                estimated_days=original_sub_task.estimated_days or 0,
+                estimated_hours=original_sub_task.estimated_hours or 0,
+                start_date=original_sub_task.start_date,
+                actual_days=original_sub_task.actual_days or 0,
+                actual_hours=original_sub_task.actual_hours or 0,
+                assigned_to=original_sub_task.assigned_to,
+            )
+        )
+
+    if new_sub_tasks:
+        cloned_sub_tasks.extend(new_sub_tasks)
+
+    return cloned_sub_tasks
 
 
 def _serialize_task_update_request(request: TaskUpdateRequest):
@@ -1842,11 +1892,13 @@ def revise_task(
         next_minor = current_minor
         next_patch = current_patch + 1
 
+    revision_sub_tasks = _clone_revision_sub_tasks(task, payload.sub_task_ids, payload.sub_tasks)
+
     revision_payload = TaskCreate(
         title=task.title,
         description=task.description,
         non_priority_flag=task.non_priority_flag,
-        sub_tasks=payload.sub_tasks,
+        sub_tasks=revision_sub_tasks,
         department_id=task.department_id,
         category_id=task.category_id,
     )

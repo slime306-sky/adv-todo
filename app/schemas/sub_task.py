@@ -14,10 +14,10 @@ class SubTaskCreate(BaseModel):
     weightage_priority: Annotated[int, Field(ge=0, le=10)] | None = None
     subtask_priority: SubTaskPriority | None = None
     estimated_days: Annotated[int, Field(ge=0)] = 0
-    estimated_hours: Annotated[int, Field(ge=0, lt=24)] = 0
+    estimated_hours: Annotated[int, Field(ge=0)] = 0
     start_date: datetime | None = None
     actual_days: Annotated[int, Field(ge=0)] = 0
-    actual_hours: Annotated[int, Field(ge=0, lt=24)] = 0
+    actual_hours: Annotated[int, Field(ge=0)] = 0
     task_id: int
     assigned_to: int | None = None
     assigned_to_username: str | None = None
@@ -37,10 +37,10 @@ class SubTaskUpdate(BaseModel):
     weightage_priority: Annotated[int, Field(ge=0, le=10)] | None = None
     subtask_priority: SubTaskPriority | None = None
     estimated_days: Annotated[int, Field(ge=0)] | None = None
-    estimated_hours: Annotated[int, Field(ge=0, lt=24)] | None = None
+    estimated_hours: Annotated[int, Field(ge=0)] | None = None
     start_date: datetime | None = None
     actual_days: Annotated[int, Field(ge=0)] | None = None
-    actual_hours: Annotated[int, Field(ge=0, lt=24)] | None = None
+    actual_hours: Annotated[int, Field(ge=0)] | None = None
     task_id: int | None = None
     assigned_to: int | None = None
     assigned_to_username: str | None = None
