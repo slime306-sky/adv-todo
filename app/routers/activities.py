@@ -9,7 +9,7 @@ from app.models.activity import Activity
 from app.models.sub_task import SubTask
 from app.models.task import Task
 from app.models.user import User
-from app.routers.sub_tasks import ensure_user_can_manage_sub_task
+from app.routers.sub_tasks import ensure_user_can_manage_sub_task,ensure_user_can_manage_task
 from app.schemas.activity import (
     ActivityCreate,
     ActivityListResponse,
