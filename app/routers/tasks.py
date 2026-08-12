@@ -1918,14 +1918,25 @@ def revise_task(
     new_task.parent_task_id = task.id
     if payload.start_date is not None and payload.end_date is not None:
         new_task.start_date = payload.start_date
-        new_task.end_date = payload.end_date
+        for sub_task in created_sub_tasks:
+            sub_task.start_date = payload.start_date
+
+            sub_task.end_date = (
+                payload.start_date
+                + timedelta(
+                    days=sub_task.estimated_days or 0,
+                    hours=sub_task.estimated_hours or 0,
+                )
+            )
+
+    # Calculate the task's estimated time/end date from its subtasks.
+    recalculate_task_estimated_time(db, new_task.id)
 
     db.commit()
     db.refresh(new_task)
     for sub_task in created_sub_tasks:
         db.refresh(sub_task)
-        
-    recalculate_task_estimated_time(db, new_task.id)
+
 
     log_audit_event(
         db=db,
