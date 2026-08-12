@@ -215,7 +215,7 @@ def _clone_revision_sub_tasks(
                 title=original_sub_task.title,
                 description=original_sub_task.description,
                 status=SubTaskStatus(original_sub_task.status),
-                weightage_priority=original_sub_task.weightage_priority,
+                weightage_priority=original_sub_task.raw_weightage_priority,
                 subtask_priority=SubTaskPriority(original_sub_task.subtask_priority)
                 if original_sub_task.subtask_priority is not None
                 else None,
