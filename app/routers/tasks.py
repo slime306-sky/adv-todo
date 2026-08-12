@@ -139,6 +139,7 @@ def _serialize_sub_task(sub_task: SubTask):
         "title": sub_task.title,
         "description": sub_task.description,
         "status": sub_task.status,
+        "raw_weightage_priority": sub_task.raw_weightage_priority,
         "weightage_priority": sub_task.weightage_priority,
         "subtask_priority": sub_task.subtask_priority,
         "estimated_days": sub_task.estimated_days,

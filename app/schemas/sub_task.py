@@ -58,6 +58,7 @@ class SubTaskResponse(BaseModel):
     title: str
     description: str
     status: str
+    raw_weightage_priority: int
     weightage_priority: int
     subtask_priority: str
     estimated_days: int
