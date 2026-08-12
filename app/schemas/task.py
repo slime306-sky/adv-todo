@@ -204,24 +204,7 @@ class TaskUpdate(BaseModel):
 
 class TaskVersionBumpRequest(BaseModel):
     bump_type: Literal["major", "minor", "patch"] = "patch"
-    start_date: datetime | None = None
-    end_date: datetime | None = None
-    sub_task_ids: list[int] | None = None
     sub_tasks: list[TaskSubTaskCreate] | None = None
-
-    @root_validator(skip_on_failure=True)
-    def validate_revision_dates(cls, values):
-        start_date = values.get("start_date")
-        end_date = values.get("end_date")
-
-        if (start_date is None) != (end_date is None):
-            raise ValueError("start_date and end_date must be provided together")
-
-        if start_date is not None and end_date is not None and end_date <= start_date:
-            raise ValueError("end_date must be after start_date")
-
-        return values
-
 
 class TaskUpdateRequestDecision(BaseModel):
     comment: str | None = None

@@ -409,16 +409,9 @@ This document lists the current endpoints, descriptions, sample request payloads
     ```json
     {
       "bump_type": "patch",
-      "start_date": "2026-08-01T09:00:00Z",
-      "end_date": "2026-08-05T17:00:00Z",
-      "sub_task_ids": [5, 6],
       "sub_tasks": [
         {
-          "title": "New planning",
-          "description": "Add a new subtask during revision",
-          "estimated_days": 0,
-          "estimated_hours": 4,
-          "assigned_to": 2
+          ...
         }
       ]
     }
