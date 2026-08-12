@@ -163,6 +163,7 @@ class SubTaskTimelineItem(BaseModel):
     actual_hours: float
     start_date: datetime | None = None
     end_date: datetime | None = None
+    assigned_to: UserReference | None = None
 
 
 class TaskTimelineResponse(BaseModel):

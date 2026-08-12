@@ -1608,6 +1608,7 @@ def get_task_timeline(
                 "actual_hours": timing["total_actual_hours"],
                 "start_date": sub_task.start_date,
                 "end_date": sub_task.end_date,
+                "assigned_to": _serialize_user_reference(sub_task.assignee, sub_task.assigned_to)
             }
         )
 
