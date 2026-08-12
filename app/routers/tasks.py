@@ -1924,6 +1924,8 @@ def revise_task(
     db.refresh(new_task)
     for sub_task in created_sub_tasks:
         db.refresh(sub_task)
+        
+    recalculate_task_estimated_time(db, new_task.id)
 
     log_audit_event(
         db=db,
@@ -1940,6 +1942,7 @@ def revise_task(
         },
     )
     db.commit()
+
 
     return _serialize_task(new_task)
 
