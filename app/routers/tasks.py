@@ -10,7 +10,10 @@ from sqlalchemy.orm import Session, selectinload
 from app.core.audit import log_audit_event
 from app.core.errors import api_error
 from app.core.security import get_current_user, get_db, require_role
-from app.core.timeline import build_sub_task_timing_fields, to_total_hours
+from app.core.timeline import (
+    build_sub_task_timing_fields,
+    calculate_task_behind_hours_from_sub_tasks,
+)
 import logging
 from app.core.database import SessionLocal
 from app.models.category import Category
@@ -155,10 +158,6 @@ def _serialize_sub_task(sub_task: SubTask):
         "created_by": _serialize_user_reference(sub_task.creator, sub_task.created_by),
         "assigned_to": _serialize_user_reference(sub_task.assignee, sub_task.assigned_to),
     }
-
-
-def _to_hours(days: int, hours: int) -> float:
-    return to_total_hours(days, hours)
 
 
 def _serialize_task(task: Task, include_sub_tasks: bool = False):
@@ -1527,26 +1526,14 @@ def get_task_timeline(
 
     ensure_user_can_manage_task(task, current_user)
 
-    total_estimated_hours = sum(
-        _to_hours(sub_task.estimated_days, sub_task.estimated_hours)
-        for sub_task in task.sub_tasks
-    )
-    total_actual_hours = sum(
-        _to_hours(sub_task.actual_days, sub_task.actual_hours) for sub_task in task.sub_tasks
+    total_estimated_hours, total_actual_hours, total_expected_hours = (
+        calculate_task_behind_hours_from_sub_tasks(task.sub_tasks)
     )
 
     sub_tasks_timeline = []
-    total_expected_hours = 0.0
 
     for sub_task in task.sub_tasks:
         timing = build_sub_task_timing_fields(sub_task)
-
-        if sub_task.status == SubTaskStatus.complete.value:
-            expected_hours = timing["expected_completion_hours"]
-            if task.non_priority_flag:
-                total_expected_hours += expected_hours
-            else:
-                total_expected_hours += expected_hours * ((sub_task.weightage_priority or 0) / 100)
 
         sub_tasks_timeline.append(
             {
@@ -1567,38 +1554,38 @@ def get_task_timeline(
     if total_estimated_hours > 0:
         estimated_percentage = 100.0
         actual_percentage = round((total_actual_hours / total_estimated_hours) * 100, 2)
-        expected_percentage = round((total_expected_hours / total_estimated_hours) * 100, 2)
+        behind_percentage = round((total_expected_hours / total_estimated_hours) * 100, 2)
     else:
         estimated_percentage = 0.0
         actual_percentage = 0.0
-        expected_percentage = 0.0
+        behind_percentage = 0.0
 
     return {
         "task_id": task.id,
         "task_title": task.title,
         "start_date": task.start_date,
         "end_date": task.end_date,
-        "total_estimated_hours": round(total_estimated_hours, 2),
-        "total_actual_hours": round(total_actual_hours, 2),
-        "total_expected_hours": round(total_expected_hours, 2),
+        "total_estimated_hours": total_estimated_hours,
+        "total_actual_hours": total_actual_hours,
+        "total_expected_hours": total_expected_hours,
         "bars": [
             {
                 "key": "estimated",
                 "label": "How much time it will take",
-                "hours": round(total_estimated_hours, 2),
+                "hours": total_estimated_hours,
                 "percentage": estimated_percentage,
             },
             {
                 "key": "actual",
                 "label": "How much time user took",
-                "hours": round(total_actual_hours, 2),
+                "hours": total_actual_hours,
                 "percentage": actual_percentage,
             },
             {
                 "key": "expected",
                 "label": "How much time it should have taken",
-                "hours": round(total_expected_hours, 2),
-                "percentage": expected_percentage,
+                "hours": total_expected_hours,
+                "percentage": behind_percentage,
             },
         ],
         "sub_tasks": sub_tasks_timeline,
