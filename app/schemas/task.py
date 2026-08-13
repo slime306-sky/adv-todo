@@ -175,7 +175,6 @@ class TaskTimelineResponse(BaseModel):
     total_actual_hours: float
     total_expected_hours: float
     bars: list[TimelineBar]
-    sub_tasks: list[SubTaskTimelineItem]
 
 
 class SubTaskPriorityItem(BaseModel):

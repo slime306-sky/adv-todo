@@ -1587,8 +1587,7 @@ def get_task_timeline(
                 "hours": total_expected_hours,
                 "percentage": behind_percentage,
             },
-        ],
-        "sub_tasks": sub_tasks_timeline,
+        ]
     }
 
 
