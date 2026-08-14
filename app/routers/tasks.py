@@ -142,6 +142,7 @@ def _serialize_sub_task(sub_task: SubTask):
         "title": sub_task.title,
         "description": sub_task.description,
         "status": sub_task.status,
+        "tag": getattr(sub_task, "tag", None),
         "raw_weightage_priority": sub_task.raw_weightage_priority,
         "weightage_priority": sub_task.weightage_priority,
         "subtask_priority": sub_task.subtask_priority,

@@ -58,7 +58,7 @@ class SubTaskResponse(BaseModel):
     title: str
     description: str
     status: str
-    tag: str
+    tag: str | None = None
     raw_weightage_priority: int
     weightage_priority: int
     subtask_priority: str
