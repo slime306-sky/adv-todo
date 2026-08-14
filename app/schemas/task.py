@@ -174,6 +174,8 @@ class TaskTimelineResponse(BaseModel):
     total_estimated_hours: float
     total_actual_hours: float
     total_expected_hours: float
+    expected_days: int
+    status: str
     bars: list[TimelineBar]
 
 

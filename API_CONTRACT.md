@@ -244,6 +244,11 @@ This document lists the current endpoints, descriptions, sample request payloads
   - Description: Returns estimated, actual, and expected timing breakdown for a task.
   - Auth: Any authenticated user with access to the task.
   - Notes: `total_expected_hours` counts completed sub-tasks only. For priority-based tasks, the completed sub-task expected hours are weighted by `priority` (`weightage_priority`).
+  - Notes: `expected_days` is the non-decimal integer conversion of `total_expected_hours` (divided by 24).
+  - Notes: `status` field indicates task progress:
+    - `"behind"` if total_actual_hours > total_estimated_hours (taking longer than expected)
+    - `"on time"` if total_actual_hours == total_estimated_hours (matching expectation)
+    - `"early"` if total_actual_hours < total_estimated_hours (finishing before expected)
   - Success response:
     ```json
     {
@@ -254,6 +259,8 @@ This document lists the current endpoints, descriptions, sample request payloads
       "total_estimated_hours": 24,
       "total_actual_hours": 18,
       "total_expected_hours": 17.25,
+      "expected_days": 0,
+      "status": "early",
       "bars": [
         {"key": "estimated", "label": "How much time it will take", "hours": 24, "percentage": 100},
         {"key": "actual", "label": "How much time user took", "hours": 18, "percentage": 75},
@@ -560,6 +567,26 @@ This document lists the current endpoints, descriptions, sample request payloads
     ```
   - Note: Omit `status` on create to use the server default. If you provide it, valid values are `not complete` or `complete`.
   - Response: a single sub-task object for single payloads, or a list of sub-task objects for bulk payloads, each with computed timing fields.
+  - Response example (single):
+    ```json
+    {
+      "id": 5,
+      "title": "Design schema",
+      "description": "Create initial tables",
+      "status": "not complete",
+      "tag": "in progress",
+      "weightage_priority": 1,
+      "subtask_priority": "high",
+      "estimated_days": 1,
+      "estimated_hours": 8,
+      "start_date": "2026-06-01T00:00:00Z",
+      "end_date": "2026-06-02T00:00:00Z",
+      "actual_days": 0,
+      "actual_hours": 0,
+      "task_id": 11,
+      "assigned_to": {"id": 2, "name": "alice"}
+    }
+    ```
 
 - GET /subtasks
   - Description: List sub-tasks visible to the current user.
@@ -576,8 +603,12 @@ This document lists the current endpoints, descriptions, sample request payloads
   - Note: When `weightage_priority` is updated, the server automatically recalculates the task's full sub-task split so the stored total remains 100.
 
 - PUT /subtasks/{sub_task_id}/complete
-  - Description: Mark a sub-task complete and auto-fill actual time.
+  - Description: Mark a sub-task complete and auto-fill actual time. Automatically sets the `tag` field based on completion time vs estimated time.
   - Auth: Authenticated user with access to the parent task.
+  - Notes: The `tag` field is set to:
+    - `"early"` if subtask is completed before the estimated end time
+    - `"late"` if subtask is completed after the estimated end time
+    - `"in progress"` if the subtask has no start date or is not yet completed
 
 - GET /subtask-update-requests/my
   - Description: List sub-task update requests made by the current user.
@@ -639,33 +670,7 @@ This document lists the current endpoints, descriptions, sample request payloads
   - Notes: `total_expected_hours` counts completed sub-tasks only. For priority-based tasks, the completed sub-task expected hours are weighted by `priority` (`weightage_priority`).
   - Response example:
     ```json
-    {
-      "task_id": 11,
-      "task_title": "Build API",
-      "start_date": "2026-06-01T00:00:00Z",
-      "end_date": "2026-06-05T00:00:00Z",
-      "total_estimated_hours": 24,
-      "total_actual_hours": 20,
-      "total_expected_hours": 18,
-      "bars": [
-        {"key": "estimated", "label": "How much time it will take", "hours": 24, "percentage": 100},
-        {"key": "actual", "label": "How much time user took", "hours": 20, "percentage": 83.33},
-        {"key": "expected", "label": "How much time it should have taken", "hours": 18, "percentage": 75}
-      ],
-      "sub_tasks": [
-        {
-          "sub_task_id": 101,
-          "title": "Design models",
-          "status": "complete",
-          "priority": 50,
-          "estimated_hours": 10,
-          "actual_hours": 8,
-          "expected_hours": 12,
-          "start_date": "2026-06-01T00:00:00Z",
-          "end_date": "2026-06-02T00:00:00Z"
-        }
-      ]
-    }
+    locho
     ```
 
 **Task Creation & Update Requests**

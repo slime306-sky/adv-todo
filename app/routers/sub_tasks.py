@@ -99,6 +99,8 @@ def _serialize_sub_task(sub_task: SubTask):
         "title": sub_task.title,
         "description": sub_task.description,
         "status": sub_task.status,
+        "tag": sub_task.tag,
+        "raw_weightage_priority": sub_task.raw_weightage_priority,
         "weightage_priority": sub_task.weightage_priority,
         "subtask_priority": sub_task.subtask_priority,
         "estimated_days": sub_task.estimated_days,
@@ -386,8 +388,23 @@ def _apply_sub_task_update(db: Session, sub_task: SubTask, update_data: dict):
     if old_status != TaskStatus.complete.value and sub_task.status == TaskStatus.complete.value:
         sub_task.completed_at = datetime.utcnow()
         _auto_fill_actual_time_on_completion(sub_task)
+        
+        # Calculate tag based on completion time vs estimated time
+        if sub_task.start_date:
+            estimated_end_date = sub_task.start_date + timedelta(
+                days=sub_task.estimated_days, 
+                hours=sub_task.estimated_hours
+            )
+            if sub_task.completed_at < estimated_end_date:
+                sub_task.tag = "early"
+            else:
+                sub_task.tag = "late"
+        else:
+            # If no start_date, can't determine early/late, keep as in progress
+            sub_task.tag = "in progress"
     elif old_status == SubTaskStatus.complete.value and sub_task.status != SubTaskStatus.complete.value:
         sub_task.completed_at = None
+        sub_task.tag = "in progress"
 
     recalculate_task_estimated_time(db, old_task_id)
     sync_task_completion_status(db, old_task_id)
@@ -467,6 +484,20 @@ def _create_sub_task_record(
         completion_time = datetime.utcnow()
         new_sub_task.completed_at = completion_time
         _auto_fill_actual_time_on_completion(new_sub_task)
+        
+        # Calculate tag based on completion time vs estimated time
+        if new_sub_task.start_date:
+            estimated_end_date = new_sub_task.start_date + timedelta(
+                days=new_sub_task.estimated_days, 
+                hours=new_sub_task.estimated_hours
+            )
+            if new_sub_task.completed_at < estimated_end_date:
+                new_sub_task.tag = "early"
+            else:
+                new_sub_task.tag = "late"
+        else:
+            # If no start_date, can't determine early/late, keep as in progress
+            new_sub_task.tag = "in progress"
 
     db.add(new_sub_task)
     db.flush()
@@ -766,6 +797,20 @@ def complete_sub_task(
     sub_task.completed_at = datetime.utcnow()
 
     _auto_fill_actual_time_on_completion(sub_task)
+
+    # Calculate tag based on completion time vs estimated time
+    if sub_task.start_date:
+        estimated_end_date = sub_task.start_date + timedelta(
+            days=sub_task.estimated_days, 
+            hours=sub_task.estimated_hours
+        )
+        if sub_task.completed_at < estimated_end_date:
+            sub_task.tag = "early"
+        else:
+            sub_task.tag = "late"
+    else:
+        # If no start_date, can't determine early/late, keep as in progress
+        sub_task.tag = "in progress"
 
     db.flush()
 

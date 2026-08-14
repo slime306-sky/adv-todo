@@ -3,7 +3,7 @@ from typing import Annotated
 
 from pydantic import BaseModel, Field
 
-from app.models.sub_task import SubTaskStatus, SubTaskPriority
+from app.models.sub_task import SubTaskStatus, SubTaskPriority, SubTaskTag
 from app.schemas.user import UserReference
 
 
@@ -58,6 +58,7 @@ class SubTaskResponse(BaseModel):
     title: str
     description: str
     status: str
+    tag: str
     raw_weightage_priority: int
     weightage_priority: int
     subtask_priority: str

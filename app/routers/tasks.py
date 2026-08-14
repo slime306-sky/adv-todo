@@ -1560,6 +1560,17 @@ def get_task_timeline(
         actual_percentage = 0.0
         behind_percentage = 0.0
 
+    # Determine status based on actual vs estimated hours
+    if total_actual_hours > total_estimated_hours:
+        status = "behind"
+    elif total_actual_hours == total_estimated_hours:
+        status = "on time"
+    else:
+        status = "early"
+
+    # Calculate expected_days from expected_hours (non-decimal)
+    expected_days = int(total_expected_hours / 24) if total_expected_hours > 0 else 0
+
     return {
         "task_id": task.id,
         "task_title": task.title,
@@ -1568,6 +1579,8 @@ def get_task_timeline(
         "total_estimated_hours": total_estimated_hours,
         "total_actual_hours": total_actual_hours,
         "total_expected_hours": total_expected_hours,
+        "expected_days": expected_days,
+        "status": status,
         "bars": [
             {
                 "key": "estimated",

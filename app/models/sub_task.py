@@ -19,6 +19,12 @@ class SubTaskPriority(str, enum.Enum):
     low = "low"
 
 
+class SubTaskTag(str, enum.Enum):
+    early = "early"
+    late = "late"
+    in_progress = "in progress"
+
+
 class SubTask(Base):
     __tablename__ = "sub_tasks"
     __table_args__ = (
@@ -29,6 +35,7 @@ class SubTask(Base):
     title = Column(String, nullable=False)
     description = Column(String)
     status = Column(String, default=SubTaskStatus.not_complete.value)
+    tag = Column(String, default=SubTaskTag.in_progress.value)
     non_priority_flag = Column(Boolean, default=False, nullable=False)
     raw_weightage_priority = Column(Integer, default=0)
     weightage_priority = Column(Integer, default=0)
