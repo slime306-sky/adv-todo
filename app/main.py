@@ -400,6 +400,11 @@ def _ensure_sub_tasks_tag_column():
                 connection.execute(
                     text("ALTER TABLE sub_tasks ADD COLUMN tag VARCHAR NOT NULL DEFAULT 'in progress'")
                 )
+            
+            # Ensure all existing rows have the tag set
+            connection.execute(
+                text("UPDATE sub_tasks SET tag = 'in progress' WHERE tag IS NULL OR tag = ''")
+            )
             return
 
         # PostgreSQL and other backends that support IF NOT EXISTS.
@@ -407,6 +412,10 @@ def _ensure_sub_tasks_tag_column():
             text(
                 "ALTER TABLE sub_tasks ADD COLUMN IF NOT EXISTS tag VARCHAR NOT NULL DEFAULT 'in progress'"
             )
+        )
+        # Ensure all existing rows have the tag set
+        connection.execute(
+            text("UPDATE sub_tasks SET tag = 'in progress' WHERE tag IS NULL OR tag = ''")
         )
 
 
