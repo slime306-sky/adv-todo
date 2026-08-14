@@ -461,6 +461,7 @@ def _create_sub_task_record(
         title=sub_task_payload.title,
         description=sub_task_payload.description,
         status=sub_task_payload.status.value,
+        tag="in progress",
         non_priority_flag=task_non_priority_flag,
         raw_weightage_priority=raw_weightage_priority,
         weightage_priority=weightage_priority,

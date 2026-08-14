@@ -567,6 +567,7 @@ def _create_task_from_payload(
                 title=sub_task.title,
                 description=sub_task.description,
                 status=sub_task.status.value,
+                tag="in progress",
                 non_priority_flag=task.non_priority_flag,
                 raw_weightage_priority=raw_weightage_priority,
                 weightage_priority=weightage_priority,
