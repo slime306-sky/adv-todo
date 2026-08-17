@@ -58,7 +58,10 @@ def calculate_sub_task_expected_progress_hours(
     if end_date is None or end_date <= start_date:
         end_date = start_date + timedelta(hours=estimated_hours)
 
-    now = _normalize_datetime(reference_time) or datetime.utcnow()
+    if sub_task.status == SubTaskStatus.complete.value and sub_task.completed_at:
+        now = _normalize_datetime(sub_task.completed_at)
+    else:
+        now = _normalize_datetime(reference_time) or datetime.utcnow()
 
     if now <= start_date:
         return 0.0

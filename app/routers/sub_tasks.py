@@ -175,11 +175,15 @@ def _serialize_sub_task_update_request(request: SubTaskUpdateRequest):
 
 
 def _auto_fill_actual_time_on_completion(sub_task: SubTask):
-    if not sub_task.created_at or not sub_task.completed_at:
+    if not sub_task.completed_at:
+        return
+
+    reference_start = sub_task.start_date or sub_task.created_at
+    if not reference_start:
         return
 
     duration_seconds = max(
-        0.0, (sub_task.completed_at - sub_task.created_at).total_seconds()
+        0.0, (sub_task.completed_at - reference_start).total_seconds()
     )
     total_hours = int(floor(duration_seconds / 3600))
     sub_task.actual_days = total_hours // 24

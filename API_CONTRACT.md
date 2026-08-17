@@ -243,12 +243,17 @@ This document lists the current endpoints, descriptions, sample request payloads
 - GET /tasks/{task_id}/timeline
   - Description: Returns estimated, actual, and expected timing breakdown for a task.
   - Auth: Any authenticated user with access to the task.
-  - Notes: `total_expected_hours` counts completed sub-tasks only. For priority-based tasks, the completed sub-task expected hours are weighted by `priority` (`weightage_priority`).
-  - Notes: `expected_days` is the non-decimal integer conversion of `total_expected_hours` (divided by 24).
-  - Notes: `status` field indicates task progress:
-    - `"behind"` if total_actual_hours > total_estimated_hours (taking longer than expected)
-    - `"on time"` if total_actual_hours == total_estimated_hours (matching expectation)
-    - `"early"` if total_actual_hours < total_estimated_hours (finishing before expected)
+  - Timeline rules:
+    - `total_expected_hours` is the sum of schedule-based expected progress across all sub-tasks.
+    - For an incomplete sub-task, expected progress advances with the current time against the sub-task schedule.
+    - For a completed sub-task, expected progress is frozen at `completed_at` and does not keep increasing later.
+    - `behind_hours` is computed as `max(expected_progress_hours - actual_hours, 0.0)` and is never negative.
+    - Actual completion time for auto-filled completion hours is measured from the sub-task `start_date` when available; this keeps the timeline aligned with the schedule-based model instead of the record creation time.
+    - `expected_days` is the non-decimal integer conversion of `total_expected_hours` (divided by 24).
+    - `status` field indicates task progress based on actual vs. estimated hours:
+      - `"behind"` if total_actual_hours > total_estimated_hours (taking longer than expected)
+      - `"on time"` if total_actual_hours == total_estimated_hours (matching expectation)
+      - `"early"` if total_actual_hours < total_estimated_hours (finishing before expected)
   - Success response:
     ```json
     {
