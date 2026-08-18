@@ -1540,22 +1540,26 @@ def get_task_progress(
 
     ensure_user_can_manage_task(task, current_user)
 
-    total_subtasks = (
-        db.query(func.count(SubTask.id)).filter(SubTask.task_id == task_id).scalar() or 0
-    )
-    completed_subtasks = (
-        db.query(func.count(SubTask.id))
-        .filter(SubTask.task_id == task_id)
-        .filter(SubTask.status == SubTaskStatus.complete.value)
-        .scalar()
-        or 0
+    excluded_sub_task_ids = (
+        db.query(SubTaskUpdateRequest.sub_task_id)
+        .filter(
+            SubTaskUpdateRequest.request_type == SubTaskUpdateRequestType.create.value,
+            SubTaskUpdateRequest.status.in_([
+                SubTaskUpdateRequestStatus.pending.value,
+                SubTaskUpdateRequestStatus.rejected.value,
+            ]),
+        )
     )
 
-    progress_percentage = (
-        round((completed_subtasks / total_subtasks) * 100, 2)
-        if total_subtasks > 0
-        else 0.0
+    completed_weightage = (
+        db.query(func.coalesce(func.sum(SubTask.weightage_priority), 0))
+        .filter(SubTask.task_id == task_id)
+        .filter(SubTask.status == SubTaskStatus.complete.value)
+        .filter(~SubTask.id.in_(excluded_sub_task_ids))
+        .scalar()
     )
+    
+    progress_percentage = round(completed_weightage, 2)
 
     return {
         "task_id": task_id,
@@ -1594,7 +1598,7 @@ def get_task_timeline(
             ]),
         )
     )
-    
+
     valid_sub_tasks = (
         db.query(SubTask)
         .filter(
@@ -1603,7 +1607,7 @@ def get_task_timeline(
         )
         .all()
     )
-    
+
     total_estimated_hours, total_actual_hours, total_expected_hours = (
         calculate_task_behind_hours_from_sub_tasks(valid_sub_tasks)
     )
