@@ -417,6 +417,12 @@ def _apply_sub_task_update(db: Session, sub_task: SubTask, update_data: dict):
     old_status = sub_task.status
     old_task_id = sub_task.task_id
 
+    if "weightage_priority" in update_data:
+        if sub_task.task and sub_task.task.non_priority_flag:
+            update_data["raw_weightage_priority"] = 0
+        else:
+            update_data["raw_weightage_priority"] = update_data["weightage_priority"]
+
     for key, value in update_data.items():
         setattr(sub_task, key, value)
 
