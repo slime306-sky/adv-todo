@@ -1487,7 +1487,7 @@ def get_task_by_id(
             SubTaskUpdateRequest.status == SubTaskUpdateRequestStatus.pending.value,
         )
     )
-    
+
     rejected_create_sub_task_ids = (
         db.query(SubTaskUpdateRequest.sub_task_id)
         .filter(
@@ -1495,7 +1495,7 @@ def get_task_by_id(
             SubTaskUpdateRequest.status == SubTaskUpdateRequestStatus.rejected.value,
         )
     )
-    
+
     sub_tasks_loader = (
         selectinload(
             Task.sub_tasks.and_(
@@ -1506,7 +1506,7 @@ def get_task_by_id(
         .selectinload(SubTask.assignee)
         .selectinload(User.departments)
     )
-    
+
     task = (
         db.query(Task)
         .options(
@@ -1584,8 +1584,28 @@ def get_task_timeline(
 
     ensure_user_can_manage_task(task, current_user)
 
+    excluded_sub_task_ids = (
+        db.query(SubTaskUpdateRequest.sub_task_id)
+        .filter(
+            SubTaskUpdateRequest.request_type == SubTaskUpdateRequestType.create.value,
+            SubTaskUpdateRequest.status.in_([
+                SubTaskUpdateRequestStatus.pending.value,
+                SubTaskUpdateRequestStatus.rejected.value,
+            ]),
+        )
+    )
+    
+    valid_sub_tasks = (
+        db.query(SubTask)
+        .filter(
+            SubTask.task_id == task.id,
+            ~SubTask.id.in_(excluded_sub_task_ids),
+        )
+        .all()
+    )
+    
     total_estimated_hours, total_actual_hours, total_expected_hours = (
-        calculate_task_behind_hours_from_sub_tasks(task.sub_tasks)
+        calculate_task_behind_hours_from_sub_tasks(valid_sub_tasks)
     )
 
     sub_tasks_timeline = []
