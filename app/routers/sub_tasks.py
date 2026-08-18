@@ -644,8 +644,14 @@ def get_sub_tasks(
             .filter(SubTaskUpdateRequest.request_type == SubTaskUpdateRequestType.create.value)
             .filter(SubTaskUpdateRequest.status == SubTaskUpdateRequestStatus.pending.value)
         )
+
+        rejected_create_sub_task_ids = (
+            db.query(SubTaskUpdateRequest.sub_task_id)
+            .filter(SubTaskUpdateRequest.request_type == SubTaskUpdateRequestType.create.value)
+            .filter(SubTaskUpdateRequest.status == SubTaskUpdateRequestStatus.rejected.value)
+        )
         
-        query = query.filter(~SubTask.id.in_(pending_create_sub_task_ids)).join(
+        query = query.filter(~SubTask.id.in_(pending_create_sub_task_ids)).filter(~SubTask.id.in_(rejected_create_sub_task_ids)).join(
             Task, Task.id == SubTask.task_id
         ).filter(
             or_(Task.created_by == current_user.id, SubTask.assigned_to == current_user.id)

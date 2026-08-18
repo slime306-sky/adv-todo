@@ -32,6 +32,17 @@ def _has_pending_create_request(db: Session, sub_task_id: int) -> bool:
     )
     return request is not None
 
+def _has_rejected_create_request(db: Session, sub_task_id: int) -> bool:
+    """Check if a SubTask has a rejected CREATE approval request."""
+    request = (
+        db.query(SubTaskUpdateRequest)
+        .filter(SubTaskUpdateRequest.sub_task_id == sub_task_id)
+        .filter(SubTaskUpdateRequest.request_type == SubTaskUpdateRequestType.create.value)
+        .filter(SubTaskUpdateRequest.status == SubTaskUpdateRequestStatus.rejected.value)
+        .first()
+    )
+    return request is not None
+
 
 def _serialize_user_reference(user: User | None, fallback_id: int | None):
     if user:
@@ -84,6 +95,13 @@ def create_activity(
             status_code=409,
             code="SUBTASK_PENDING_CREATE_APPROVAL",
             message="Cannot create activities for subtask while pending creation approval",
+        )
+
+    if _has_rejected_create_request(db, activity.sub_task_id):
+        raise api_error(
+            status_code=409,
+            code="SUBTASK_REJECTED_CREATE_APPROVAL",
+            message="Cannot create activities for subtask with rejected creation approval",
         )
 
     new_activity = Activity(
