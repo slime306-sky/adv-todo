@@ -1480,14 +1480,40 @@ def get_task_by_id(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    pending_create_sub_task_ids = (
+        db.query(SubTaskUpdateRequest.sub_task_id)
+        .filter(
+            SubTaskUpdateRequest.request_type == SubTaskUpdateRequestType.create.value,
+            SubTaskUpdateRequest.status == SubTaskUpdateRequestStatus.pending.value,
+        )
+    )
+    
+    rejected_create_sub_task_ids = (
+        db.query(SubTaskUpdateRequest.sub_task_id)
+        .filter(
+            SubTaskUpdateRequest.request_type == SubTaskUpdateRequestType.create.value,
+            SubTaskUpdateRequest.status == SubTaskUpdateRequestStatus.rejected.value,
+        )
+    )
+    
+    sub_tasks_loader = (
+        selectinload(
+            Task.sub_tasks.and_(
+                ~SubTask.id.in_(pending_create_sub_task_ids),
+                ~SubTask.id.in_(rejected_create_sub_task_ids),
+            )
+        )
+        .selectinload(SubTask.assignee)
+        .selectinload(User.departments)
+    )
+    
     task = (
         db.query(Task)
         .options(
-            selectinload(Task.sub_tasks),
+            sub_tasks_loader,
             selectinload(Task.department),
             selectinload(Task.category),
             selectinload(Task.creator).selectinload(User.departments),
-            selectinload(Task.sub_tasks).selectinload(SubTask.assignee).selectinload(User.departments),
         )
         .filter(Task.id == task_id)
         .first()
