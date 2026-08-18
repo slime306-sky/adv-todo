@@ -7,6 +7,7 @@ from app.core.errors import api_error
 from app.core.security import get_current_user, get_db, require_role
 from app.models.activity import Activity
 from app.models.sub_task import SubTask
+from app.models.sub_task_update_request import SubTaskUpdateRequest, SubTaskUpdateRequestStatus, SubTaskUpdateRequestType
 from app.models.task import Task
 from app.models.user import User
 from app.routers.sub_tasks import ensure_user_can_manage_sub_task,ensure_user_can_manage_task
@@ -18,6 +19,18 @@ from app.schemas.activity import (
 )
 
 router = APIRouter(tags=["activities"])
+
+
+def _has_pending_create_request(db: Session, sub_task_id: int) -> bool:
+    """Check if a SubTask has a pending CREATE approval request."""
+    request = (
+        db.query(SubTaskUpdateRequest)
+        .filter(SubTaskUpdateRequest.sub_task_id == sub_task_id)
+        .filter(SubTaskUpdateRequest.request_type == SubTaskUpdateRequestType.create.value)
+        .filter(SubTaskUpdateRequest.status == SubTaskUpdateRequestStatus.pending.value)
+        .first()
+    )
+    return request is not None
 
 
 def _serialize_user_reference(user: User | None, fallback_id: int | None):
@@ -64,6 +77,14 @@ def create_activity(
         )
 
     ensure_user_can_manage_sub_task(sub_task, current_user, task)
+
+    # Prevent activities on subtasks with pending CREATE requests
+    if _has_pending_create_request(db, activity.sub_task_id):
+        raise api_error(
+            status_code=409,
+            code="SUBTASK_PENDING_CREATE_APPROVAL",
+            message="Cannot create activities for subtask while pending creation approval",
+        )
 
     new_activity = Activity(
         title=activity.title,

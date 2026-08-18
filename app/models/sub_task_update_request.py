@@ -13,6 +13,11 @@ class SubTaskUpdateRequestStatus(str, enum.Enum):
     rejected = "rejected"
 
 
+class SubTaskUpdateRequestType(str, enum.Enum):
+    create = "create"
+    update = "update"
+
+
 class SubTaskUpdateRequest(Base):
     __tablename__ = "sub_task_update_requests"
 
@@ -20,6 +25,7 @@ class SubTaskUpdateRequest(Base):
     sub_task_id = Column(Integer, ForeignKey("sub_tasks.id"), nullable=False, index=True)
     requested_by = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     status = Column(String, default=SubTaskUpdateRequestStatus.pending.value, nullable=False, index=True)
+    request_type = Column(String, default=SubTaskUpdateRequestType.update.value, nullable=False, index=True)
     requested_changes = Column(JSON, nullable=False)
     review_comment = Column(String, nullable=True)
     reviewed_by = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)

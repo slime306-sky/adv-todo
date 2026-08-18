@@ -495,6 +495,38 @@ def _database_host_hint() -> str:
     return parsed.hostname or "Unable to parse host from DATABASE_URL"
 
 
+def _ensure_sub_task_update_requests_request_type_column():
+    """Ensure sub_task_update_requests table has request_type column."""
+    with engine.begin() as connection:
+        if engine.url.drivername.startswith("sqlite"):
+            table_exists = connection.execute(
+                text(
+                    "SELECT name FROM sqlite_master "
+                    "WHERE type = 'table' AND name = 'sub_task_update_requests'"
+                )
+            ).first()
+
+            if not table_exists:
+                return
+
+            existing_columns = {
+                row[1] for row in connection.execute(text("PRAGMA table_info(sub_task_update_requests)"))
+            }
+
+            if "request_type" not in existing_columns:
+                connection.execute(
+                    text("ALTER TABLE sub_task_update_requests ADD COLUMN request_type VARCHAR NOT NULL DEFAULT 'update'")
+                )
+            return
+
+        # PostgreSQL and other backends that support IF NOT EXISTS.
+        connection.execute(
+            text(
+                "ALTER TABLE sub_task_update_requests ADD COLUMN IF NOT EXISTS request_type VARCHAR NOT NULL DEFAULT 'update'"
+            )
+        )
+
+
 def _initialize_database_with_retry() -> None:
     last_error: Exception | None = None
 
@@ -508,6 +540,7 @@ def _initialize_database_with_retry() -> None:
             _ensure_sub_tasks_tag_column()
             _ensure_audit_logs_cascade_delete()
             _ensure_subtask_weightage_check()
+            _ensure_sub_task_update_requests_request_type_column()
             return
         except OperationalError as exc:
             last_error = exc

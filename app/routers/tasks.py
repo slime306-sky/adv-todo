@@ -20,7 +20,7 @@ from app.models.category import Category
 from app.models.department import Department
 from app.models.sub_task import SubTask, SubTaskStatus, SubTaskPriority
 from app.models.task_creation_request import TaskCreationRequest, TaskCreationRequestStatus
-from app.models.sub_task_update_request import SubTaskUpdateRequest, SubTaskUpdateRequestStatus
+from app.models.sub_task_update_request import SubTaskUpdateRequest, SubTaskUpdateRequestStatus, SubTaskUpdateRequestType
 from app.models.task import Task, TaskStatus
 from app.models.task_update_request import TaskUpdateRequest, TaskUpdateRequestStatus
 from app.models.user import User
@@ -55,6 +55,32 @@ from app.schemas.task import (
 )
 
 router = APIRouter(tags=["tasks"])
+
+
+def _has_pending_create_request(db: Session, sub_task_id: int) -> bool:
+    """Check if a SubTask has a pending CREATE approval request."""
+    request = (
+        db.query(SubTaskUpdateRequest)
+        .filter(SubTaskUpdateRequest.sub_task_id == sub_task_id)
+        .filter(SubTaskUpdateRequest.request_type == SubTaskUpdateRequestType.create.value)
+        .filter(SubTaskUpdateRequest.status == SubTaskUpdateRequestStatus.pending.value)
+        .first()
+    )
+    return request is not None
+
+
+def _filter_active_sub_tasks(db: Session, sub_tasks: list[SubTask], current_user: User | None = None) -> list[SubTask]:
+    """Filter out pending CREATE subtasks for non-admin users."""
+    if current_user and current_user.role == "admin":
+        return sub_tasks
+    
+    # For non-admins, filter out subtasks with pending CREATE requests
+    pending_create_ids = set()
+    for st in sub_tasks:
+        if _has_pending_create_request(db, st.id):
+            pending_create_ids.add(st.id)
+    
+    return [st for st in sub_tasks if st.id not in pending_create_ids]
 
 
 def _serialize_user_reference(user: User | None, fallback_id: int | None):
@@ -161,7 +187,7 @@ def _serialize_sub_task(sub_task: SubTask):
     }
 
 
-def _serialize_task(task: Task, include_sub_tasks: bool = False):
+def _serialize_task(task: Task, include_sub_tasks: bool = False, db: Session | None = None, current_user: User | None = None):
     payload = {
         "id": task.id,
         "title": task.title,
@@ -181,7 +207,11 @@ def _serialize_task(task: Task, include_sub_tasks: bool = False):
     }
 
     if include_sub_tasks:
-        payload["sub_tasks"] = [_serialize_sub_task(sub_task) for sub_task in task.sub_tasks]
+        sub_tasks = task.sub_tasks or []
+        # Filter out pending CREATE subtasks for non-admins
+        if db and current_user:
+            sub_tasks = _filter_active_sub_tasks(db, sub_tasks, current_user)
+        payload["sub_tasks"] = [_serialize_sub_task(sub_task) for sub_task in sub_tasks]
 
     return payload
 
@@ -657,7 +687,7 @@ def create_task(
             )
             db.commit()
             return {
-                **_serialize_task(new_task, include_sub_tasks=True),
+                **_serialize_task(new_task, include_sub_tasks=True, db=db, current_user=current_user),
                 "sub_tasks": [_serialize_sub_task(sub_task) for sub_task in created_sub_tasks],
                 "sub_tasks_created_count": len(created_sub_tasks),
             }
@@ -776,7 +806,7 @@ def create_task(
     )
     db.commit()
     return {
-        **_serialize_task(new_task, include_sub_tasks=True),
+        **_serialize_task(new_task, include_sub_tasks=True, db=db, current_user=current_user),
         "sub_tasks": [_serialize_sub_task(sub_task) for sub_task in created_sub_tasks],
         "sub_tasks_created_count": len(created_sub_tasks),
     }
@@ -1045,7 +1075,7 @@ def approve_task_creation_request(
             "sub_tasks_count": len(created_sub_tasks),
             "requested_payload": payload_body,
             "created_task_snapshot": {
-                **_serialize_task(new_task, include_sub_tasks=True),
+                **_serialize_task(new_task, include_sub_tasks=True, db=db, current_user=current_user),
                 "sub_tasks": [_serialize_sub_task(st) for st in created_sub_tasks],
             },
         }
@@ -1163,7 +1193,7 @@ def get_my_tasks(
         .all()
     )
 
-    serialized_items = [_serialize_task(task, include_sub_tasks=True) for task in items]
+    serialized_items = [_serialize_task(task, include_sub_tasks=True, db=db, current_user=current_user) for task in items]
 
     return {
         "items": serialized_items,
@@ -1468,7 +1498,7 @@ def get_task_by_id(
 
     ensure_user_can_manage_task(task, current_user)
 
-    return _serialize_task(task, include_sub_tasks=True)
+    return _serialize_task(task, include_sub_tasks=True, db=db, current_user=current_user)
 
 
 @router.get("/tasks/{task_id}/progress", response_model=TaskProgressResponse)

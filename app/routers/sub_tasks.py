@@ -9,7 +9,7 @@ from app.core.errors import api_error
 from app.core.security import get_current_user, get_db, require_role
 from app.core.timeline import build_sub_task_timing_fields
 from app.models.sub_task import SubTask, SubTaskPriority, SubTaskStatus
-from app.models.sub_task_update_request import SubTaskUpdateRequest, SubTaskUpdateRequestStatus
+from app.models.sub_task_update_request import SubTaskUpdateRequest, SubTaskUpdateRequestStatus, SubTaskUpdateRequestType
 from app.models.task import Task, TaskStatus
 from app.models.user import User
 from app.models.activity import Activity
@@ -25,6 +25,28 @@ from app.schemas.sub_task import (
 
 router = APIRouter(tags=["sub-tasks"])
 PRIORITY_TOTAL_TARGET = 100
+
+
+def _has_pending_create_request(db: Session, sub_task_id: int) -> bool:
+    """Check if a SubTask has a pending CREATE approval request."""
+    request = (
+        db.query(SubTaskUpdateRequest)
+        .filter(SubTaskUpdateRequest.sub_task_id == sub_task_id)
+        .filter(SubTaskUpdateRequest.request_type == SubTaskUpdateRequestType.create.value)
+        .filter(SubTaskUpdateRequest.status == SubTaskUpdateRequestStatus.pending.value)
+        .first()
+    )
+    return request is not None
+
+
+def _get_active_sub_tasks_query(db: Session, task_id: int):
+    """Get a query for SubTasks that excludes those with pending CREATE requests."""
+    pending_create_ids = (
+        db.query(SubTaskUpdateRequest.sub_task_id)
+        .filter(SubTaskUpdateRequest.request_type == SubTaskUpdateRequestType.create.value)
+        .filter(SubTaskUpdateRequest.status == SubTaskUpdateRequestStatus.pending.value)
+    )
+    return db.query(SubTask).filter(SubTask.task_id == task_id).filter(~SubTask.id.in_(pending_create_ids))
 
 
 def _normalize_weightage_priority_values(weightage_priorities: list[int | None]) -> list[int]:
@@ -55,12 +77,8 @@ def _normalize_weightage_priority_values(weightage_priorities: list[int | None])
 
 
 def _rebalance_task_weightage_priorities(db: Session, task_id: int):
-    task_sub_tasks = (
-        db.query(SubTask)
-        .filter(SubTask.task_id == task_id)
-        .order_by(SubTask.id.asc())
-        .all()
-    )
+    # Use active subtasks only (exclude pending CREATE requests)
+    task_sub_tasks = _get_active_sub_tasks_query(db, task_id).order_by(SubTask.id.asc()).all()
 
     if not task_sub_tasks:
         return
@@ -195,6 +213,13 @@ def recalculate_task_estimated_time(db: Session, task_id: int):
     # to make aggregate totals reflect the latest sub-task changes.
     db.flush()
 
+    # Exclude pending CREATE subtasks from calculations
+    pending_create_ids = (
+        db.query(SubTaskUpdateRequest.sub_task_id)
+        .filter(SubTaskUpdateRequest.request_type == SubTaskUpdateRequestType.create.value)
+        .filter(SubTaskUpdateRequest.status == SubTaskUpdateRequestStatus.pending.value)
+    )
+
     total_hours = (
         db.query(
             func.coalesce(
@@ -202,6 +227,7 @@ def recalculate_task_estimated_time(db: Session, task_id: int):
             )
         )
         .filter(SubTask.task_id == task_id)
+        .filter(~SubTask.id.in_(pending_create_ids))
         .scalar()
     )
 
@@ -217,7 +243,8 @@ def recalculate_task_estimated_time(db: Session, task_id: int):
             return value
         return value.astimezone(timezone.utc).replace(tzinfo=None)
 
-    sub_tasks = db.query(SubTask).filter(SubTask.task_id == task_id).all()
+    # Get only active subtasks for start/end date calculations
+    sub_tasks = _get_active_sub_tasks_query(db, task_id).all()
     start_candidates = [_normalize_datetime(sub_task.start_date) for sub_task in sub_tasks if sub_task.start_date]
 
     if not start_candidates:
@@ -246,8 +273,18 @@ def sync_task_completion_status(db: Session, task_id: int):
     if not task:
         return
 
+    # Exclude pending CREATE subtasks from completion calculations
+    pending_create_ids = (
+        db.query(SubTaskUpdateRequest.sub_task_id)
+        .filter(SubTaskUpdateRequest.request_type == SubTaskUpdateRequestType.create.value)
+        .filter(SubTaskUpdateRequest.status == SubTaskUpdateRequestStatus.pending.value)
+    )
+
     total_subtasks = (
-        db.query(func.count(SubTask.id)).filter(SubTask.task_id == task_id).scalar() or 0
+        db.query(func.count(SubTask.id))
+        .filter(SubTask.task_id == task_id)
+        .filter(~SubTask.id.in_(pending_create_ids))
+        .scalar() or 0
     )
 
     if total_subtasks == 0:
@@ -257,6 +294,7 @@ def sync_task_completion_status(db: Session, task_id: int):
         db.query(func.count(SubTask.id))
         .filter(SubTask.task_id == task_id)
         .filter(SubTask.status == SubTaskStatus.complete.value)
+        .filter(~SubTask.id.in_(pending_create_ids))
         .scalar()
         or 0
     )
@@ -531,6 +569,7 @@ def _create_sub_task_record(
             sub_task_id=new_sub_task.id,
             requested_by=current_user.id,
             status=SubTaskUpdateRequestStatus.pending.value,
+            request_type=SubTaskUpdateRequestType.create.value,
             requested_changes=requested_changes,
         )
         db.add(approval_request)
@@ -599,7 +638,16 @@ def get_sub_tasks(
     if current_user.role == "admin":
         pass
     else:
-        query = query.join(Task, Task.id == SubTask.task_id).filter(
+        # Exclude subtasks with pending CREATE requests for non-admins
+        pending_create_sub_task_ids = (
+            db.query(SubTaskUpdateRequest.sub_task_id)
+            .filter(SubTaskUpdateRequest.request_type == SubTaskUpdateRequestType.create.value)
+            .filter(SubTaskUpdateRequest.status == SubTaskUpdateRequestStatus.pending.value)
+        )
+        
+        query = query.filter(~SubTask.id.in_(pending_create_sub_task_ids)).join(
+            Task, Task.id == SubTask.task_id
+        ).filter(
             or_(Task.created_by == current_user.id, SubTask.assigned_to == current_user.id)
         )
 
@@ -649,6 +697,14 @@ def get_sub_task_by_id(
             message="Sub task not found",
         )
 
+    # Check if this SubTask has a pending CREATE request
+    if current_user.role != "admin" and _has_pending_create_request(db, sub_task_id):
+        raise api_error(
+            status_code=404,
+            code="SUBTASK_NOT_FOUND",
+            message="Sub task not found",
+        )
+
     task = db.query(Task).filter(Task.id == sub_task.task_id).first()
     if not task:
         raise api_error(status_code=404, code="TASK_NOT_FOUND", message="Task not found")
@@ -676,6 +732,14 @@ def update_sub_task(
     if not existing_task:
         raise api_error(status_code=404, code="TASK_NOT_FOUND", message="Task not found")
     ensure_user_can_manage_sub_task(sub_task, current_user, existing_task)
+
+    # Prevent updates on subtasks with pending CREATE requests
+    if _has_pending_create_request(db, sub_task_id):
+        raise api_error(
+            status_code=409,
+            code="SUBTASK_PENDING_CREATE_APPROVAL",
+            message="Cannot update subtask while pending creation approval",
+        )
 
     update_data = sub_task_update.dict(exclude_unset=True)
     if not update_data:
@@ -782,6 +846,14 @@ def complete_sub_task(
         )
 
     ensure_user_can_manage_sub_task(sub_task, current_user, task)
+
+    # Prevent completion on subtasks with pending CREATE requests
+    if _has_pending_create_request(db, sub_task_id):
+        raise api_error(
+            status_code=409,
+            code="SUBTASK_PENDING_CREATE_APPROVAL",
+            message="Cannot complete subtask while pending creation approval",
+        )
 
     if sub_task.status == SubTaskStatus.complete.value:
         raise api_error(
