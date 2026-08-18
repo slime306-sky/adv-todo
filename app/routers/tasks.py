@@ -1551,6 +1551,14 @@ def get_task_progress(
         )
     )
 
+    total_subtasks = (
+        db.query(func.count(SubTask.id))
+        .filter(SubTask.task_id == task_id)
+        .filter(~SubTask.id.in_(excluded_sub_task_ids))
+        .scalar()
+        or 0
+    )
+
     completed_weightage = (
         db.query(func.coalesce(func.sum(SubTask.weightage_priority), 0))
         .filter(SubTask.task_id == task_id)
@@ -1558,7 +1566,7 @@ def get_task_progress(
         .filter(~SubTask.id.in_(excluded_sub_task_ids))
         .scalar()
     )
-    
+
     progress_percentage = round(completed_weightage, 2)
 
     return {
