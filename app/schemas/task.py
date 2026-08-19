@@ -191,7 +191,12 @@ class TaskPriorityBulkUpdateRequest(BaseModel):
 class TaskPriorityBulkUpdateResponse(BaseModel):
     task_id: int
     total_priority: int
-    items: list[SubTaskPriorityItem]
+    items: list["TaskPriorityBulkUpdateResult"]
+
+
+class TaskPriorityBulkUpdateResult(BaseModel):
+    sub_task_id: int
+    weightage_priority: Annotated[int, Field(ge=0, le=100)]
 
 
 class TaskUpdate(BaseModel):

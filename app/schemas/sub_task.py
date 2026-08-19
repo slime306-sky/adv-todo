@@ -59,8 +59,8 @@ class SubTaskResponse(BaseModel):
     description: str
     status: str
     tag: str | None = None
-    raw_weightage_priority: int
-    weightage_priority: int
+    raw_weightage_priority: Annotated[int | None, Field(ge=0, le=10)]
+    weightage_priority: Annotated[int, Field(ge=0, le=100)]
     subtask_priority: str
     estimated_days: int
     estimated_hours: int

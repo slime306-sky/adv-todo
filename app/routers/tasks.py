@@ -30,6 +30,7 @@ from app.routers.sub_tasks import (
     resolve_assigned_user,
     sync_task_completion_status,
     _normalize_weightage_priority_values,
+    _validate_raw_weightage_priority,
 )
 from app.schemas.task import (
     TaskPriorityBulkUpdateRequest,
@@ -539,20 +540,23 @@ def _create_task_from_payload(
     db.flush()
 
     if task.sub_tasks:
-        # Capture original payload weightage values before normalization
         payload_raws = [
-            (st.weightage_priority if st.weightage_priority is not None else 0)
-            for st in task.sub_tasks
+            _validate_raw_weightage_priority(
+                sub_task.weightage_priority,
+                task.non_priority_flag,
+                required=not task.non_priority_flag,
+            )
+            for sub_task in task.sub_tasks
         ]
 
         if not task.non_priority_flag:
             normalized_priorities = _normalize_weightage_priority_values(
-                [sub_task.weightage_priority for sub_task in task.sub_tasks]
+                payload_raws
             )
-            for sub_task, normalized_priority in zip(task.sub_tasks, normalized_priorities):
-                sub_task.weightage_priority = normalized_priority
+        else:
+            normalized_priorities = [0] * len(task.sub_tasks)
 
-        for idx, sub_task in enumerate(task.sub_tasks):
+        for idx, (sub_task, normalized_priority) in enumerate(zip(task.sub_tasks, normalized_priorities)):
             print(
                 "SUBTASK:",
                 sub_task.title,
@@ -580,19 +584,14 @@ def _create_task_from_payload(
                     details={"title": sub_task.title},
                 )
 
-            weightage_priority = 0 if effective_non_priority_flag else sub_task.weightage_priority
+            weightage_priority = normalized_priority
             subtask_priority = (
                 SubTaskPriority.medium.value
                 if effective_non_priority_flag
                 else sub_task.subtask_priority.value
             )
 
-            raw_weightage_priority = getattr(sub_task, "raw_weightage_priority", None)
-            if raw_weightage_priority is None:
-                # Use the original submitted value (payload_raws) rather than the
-                # normalized `weightage_priority` so `raw_weightage_priority` stores
-                # the incoming payload number.
-                raw_weightage_priority = payload_raws[idx] if idx < len(payload_raws) else (weightage_priority or 0)
+            raw_weightage_priority = payload_raws[idx]
 
             new_sub_task = SubTask(
                 title=sub_task.title,
@@ -737,8 +736,6 @@ def create_task(
                 "payload": payload_wrapper,
                 "version": getattr(TaskCreate, "__payload_version__", 1),
                 "subtask_fingerprints": subtask_fps,
-                "department_id": task.department_id,
-                "category_id": task.category_id,
             }
 
         creation_request = TaskCreationRequest(
@@ -915,11 +912,11 @@ def approve_task_creation_request(
         # Parse stored payload (support legacy and wrapped payload)
         stored = request.requested_payload
         if isinstance(stored, dict) and "payload" in stored:
-            payload_body = stored["payload"]
+            payload_body = dict(stored["payload"])
             stored_version = stored.get("version", 1)
-            if stored.get("department_id") is not None:
+            if "department_id" not in payload_body and stored.get("department_id") is not None:
                 payload_body["department_id"] = stored["department_id"]
-            if stored.get("category_id") is not None:
+            if "category_id" not in payload_body and stored.get("category_id") is not None:
                 payload_body["category_id"] = stored["category_id"]
         else:
             payload_body = stored
@@ -1024,11 +1021,14 @@ def approve_task_creation_request(
                         )
 
                     original_st = original_task.sub_tasks[orig_idx]
+                    override_fields = getattr(override_st, "model_fields_set", set())
+                    override_update = {
+                        field: getattr(override_st, field)
+                        for field in ("weightage_priority", "subtask_priority")
+                        if field in override_fields
+                    }
                     copied_sub_task = original_st.model_copy(
-                        update={
-                            "weightage_priority": override_st.weightage_priority,
-                            "subtask_priority": override_st.subtask_priority,
-                        },
+                        update=override_update,
                         deep=True,
                     )
                     approved_sub_tasks.append(copied_sub_task)
@@ -1311,6 +1311,7 @@ def _apply_task_update(db: Session, task: Task, update_data: dict):
         db.query(SubTask).filter(SubTask.task_id == task.id).update(
             {
                 SubTask.non_priority_flag: True,
+                SubTask.raw_weightage_priority: 0,
                 SubTask.weightage_priority: 0,
                 SubTask.subtask_priority: SubTaskPriority.medium.value,
             },
@@ -1765,22 +1766,31 @@ def update_task_sub_task_priorities(
             message="Payload sub-task ids must exactly match this task's sub-tasks",
         )
 
-    normalized_priorities = _normalize_weightage_priority_values(
-        [item.weightage_priority for item in payload.items]
-    )
+    raw_priorities = [item.weightage_priority for item in payload.items]
+    if task.non_priority_flag:
+        for raw_priority in raw_priorities:
+            _validate_raw_weightage_priority(raw_priority, True)
+    else:
+        for raw_priority in raw_priorities:
+            _validate_raw_weightage_priority(raw_priority, False)
+
+    normalized_priorities = _normalize_weightage_priority_values(raw_priorities)
 
     priority_map = {
         item.sub_task_id: normalized_priority
         for item, normalized_priority in zip(payload.items, normalized_priorities)
     }
-    raw_priority_map = {
-        item.sub_task_id: item.weightage_priority or 0 for item in payload.items
-    }
+    raw_priority_map = {item.sub_task_id: item.weightage_priority for item in payload.items}
     for sub_task in task.sub_tasks:
-        sub_task.weightage_priority = priority_map[sub_task.id]
-        sub_task.raw_weightage_priority = raw_priority_map[sub_task.id]
+        if task.non_priority_flag:
+            sub_task.weightage_priority = 0
+            sub_task.raw_weightage_priority = 0
+        else:
+            sub_task.weightage_priority = priority_map[sub_task.id]
+            sub_task.raw_weightage_priority = raw_priority_map[sub_task.id]
 
     db.flush()
+    total_priority = 0 if task.non_priority_flag else sum(normalized_priorities)
 
     log_audit_event(
         db=db,
@@ -1789,15 +1799,18 @@ def update_task_sub_task_priorities(
         entity_id=task.id,
         user_id=current_user.id,
         message="Sub-task priorities updated in bulk",
-        details={"sub_task_count": len(payload.items), "total_priority": sum(normalized_priorities)},
+        details={"sub_task_count": len(payload.items), "total_priority": total_priority},
     )
     db.commit()
 
     return {
         "task_id": task.id,
-        "total_priority": sum(normalized_priorities),
+        "total_priority": total_priority,
         "items": [
-            item.model_copy(update={"weightage_priority": normalized_priority})
+            {
+                "sub_task_id": item.sub_task_id,
+                "weightage_priority": 0 if task.non_priority_flag else normalized_priority,
+            }
             for item, normalized_priority in zip(payload.items, normalized_priorities)
         ],
     }

@@ -53,7 +53,7 @@ def _normalize_weightage_priority_values(weightage_priorities: list[int | None])
     if not weightage_priorities:
         return []
 
-    sanitized = [max(0, int(value or 0)) for value in weightage_priorities]
+    sanitized = [0 if value is None else int(value) for value in weightage_priorities]
     total = sum(sanitized)
 
     if total <= 0:
@@ -83,23 +83,63 @@ def _rebalance_task_weightage_priorities(db: Session, task_id: int):
     if not task_sub_tasks:
         return
 
+    priority_sub_tasks = [sub_task for sub_task in task_sub_tasks if not sub_task.non_priority_flag]
+    for sub_task in task_sub_tasks:
+        if sub_task.non_priority_flag:
+            sub_task.weightage_priority = 0
+
+    if not priority_sub_tasks:
+        return
+
     # Prefer raw payload weight values when present so additions behave
     # the same as task creation (which normalizes from the original payload).
-    raw_values = [getattr(sub_task, "raw_weightage_priority", None) for sub_task in task_sub_tasks]
+    raw_values = [
+        getattr(sub_task, "raw_weightage_priority", None)
+        for sub_task in priority_sub_tasks
+    ]
 
-    # If every raw value is either None or zero, treat raw as missing
-    # (this covers existing rows that were backfilled with DEFAULT 0).
-    use_raw = any((rv is not None and rv != 0) for rv in raw_values)
-
-    if use_raw:
-        source_values = [rv if (rv is not None) else sub_task.weightage_priority for sub_task, rv in zip(task_sub_tasks, raw_values)]
-    else:
-        source_values = [sub_task.weightage_priority for sub_task in task_sub_tasks]
+    source_values = [
+        raw_value if raw_value is not None else sub_task.weightage_priority
+        for sub_task, raw_value in zip(priority_sub_tasks, raw_values)
+    ]
 
     normalized_priorities = _normalize_weightage_priority_values(source_values)
 
-    for sub_task, normalized_priority in zip(task_sub_tasks, normalized_priorities):
+    for sub_task, normalized_priority in zip(priority_sub_tasks, normalized_priorities):
         sub_task.weightage_priority = normalized_priority
+
+
+def _validate_raw_weightage_priority(
+    value: int | None,
+    non_priority_flag: bool,
+    *,
+    required: bool = True,
+) -> int:
+    if value is None:
+        if required:
+            raise api_error(
+                status_code=400,
+                code="MISSING_RAW_WEIGHTAGE_PRIORITY",
+                message="Priority sub-task must include weightage_priority",
+            )
+        return 0
+
+    if non_priority_flag:
+        if value != 0:
+            raise api_error(
+                status_code=400,
+                code="INVALID_RAW_WEIGHTAGE_PRIORITY",
+                message="Non-priority sub-task weightage_priority must be 0",
+            )
+        return 0
+
+    if value < 1 or value > 10:
+        raise api_error(
+            status_code=400,
+            code="INVALID_RAW_WEIGHTAGE_PRIORITY",
+            message="Priority sub-task weightage_priority must be between 1 and 10",
+        )
+    return value
 
 
 def _serialize_user_reference(user: User | None, fallback_id: int | None):
@@ -418,8 +458,10 @@ def _apply_sub_task_update(db: Session, sub_task: SubTask, update_data: dict):
     old_task_id = sub_task.task_id
 
     if "weightage_priority" in update_data:
-        if sub_task.task and sub_task.task.non_priority_flag:
+        if sub_task.non_priority_flag:
+            update_data["weightage_priority"] = 0
             update_data["raw_weightage_priority"] = 0
+            update_data["subtask_priority"] = SubTaskPriority.medium.value
         else:
             update_data["raw_weightage_priority"] = update_data["weightage_priority"]
 
@@ -490,9 +532,11 @@ def _create_sub_task_record(
     if current_user.role != "admin" and not task_non_priority_flag:
         needs_priority_approval = True
 
-    raw_weightage_priority = 0
-    if not task_non_priority_flag and sub_task_payload.weightage_priority is not None:
-        raw_weightage_priority = sub_task_payload.weightage_priority
+    raw_weightage_priority = _validate_raw_weightage_priority(
+        sub_task_payload.weightage_priority,
+        task_non_priority_flag,
+        required=not task_non_priority_flag and current_user.role == "admin",
+    )
 
     weightage_priority = (
         0
@@ -551,13 +595,8 @@ def _create_sub_task_record(
     db.add(new_sub_task)
     db.flush()
 
-    if not task_non_priority_flag and sub_task_payload.weightage_priority is not None:
-        _rebalance_task_weightage_priorities(db, task.id)
-
     recalculate_task_estimated_time(db, sub_task_payload.task_id)
     sync_task_completion_status(db, sub_task_payload.task_id)
-    db.commit()
-    db.refresh(new_sub_task)
 
     if current_user.role != "admin" and needs_priority_approval:
         requested_changes = {
@@ -579,6 +618,7 @@ def _create_sub_task_record(
             requested_changes=requested_changes,
         )
         db.add(approval_request)
+        db.flush()
         log_audit_event(
             db=db,
             action="CREATE",
@@ -588,7 +628,12 @@ def _create_sub_task_record(
             message="Sub-task created, waiting for admin to set priority fields",
             details={"sub_task_id": new_sub_task.id, "title": new_sub_task.title},
         )
-        db.commit()
+
+    if not needs_priority_approval and not task_non_priority_flag:
+        _rebalance_task_weightage_priorities(db, task.id)
+
+    db.commit()
+    db.refresh(new_sub_task)
 
     log_audit_event(
         db=db,
@@ -767,9 +812,11 @@ def update_sub_task(
     target_task_id = update_data.get("task_id", sub_task.task_id)
     target_task = validate_task(db, target_task_id)
     old_task_id = sub_task.task_id
-    if target_task.non_priority_flag:
+    if sub_task.non_priority_flag:
         update_data["weightage_priority"] = 0
         update_data["subtask_priority"] = SubTaskPriority.medium.value
+    elif "weightage_priority" in update_data:
+        _validate_raw_weightage_priority(update_data["weightage_priority"], False)
 
     _validate_sub_task_update_constraints(db, sub_task, update_data)
 
@@ -814,11 +861,9 @@ def update_sub_task(
 
     if target_task_id != old_task_id:
         old_task = validate_task(db, old_task_id)
-        if not old_task.non_priority_flag:
-            _rebalance_task_weightage_priorities(db, old_task_id)
-        if not target_task.non_priority_flag:
-            _rebalance_task_weightage_priorities(db, target_task_id)
-    elif not target_task.non_priority_flag and "weightage_priority" in update_data:
+        _rebalance_task_weightage_priorities(db, old_task_id)
+        _rebalance_task_weightage_priorities(db, target_task_id)
+    elif "weightage_priority" in update_data:
         _rebalance_task_weightage_priorities(db, target_task_id)
 
     log_audit_event(
@@ -1018,26 +1063,39 @@ def approve_sub_task_update_request(
     old_task_id = sub_task.task_id
     target_task_id = update_data.get("task_id", sub_task.task_id)
     target_task = validate_task(db, target_task_id)
-    if target_task.non_priority_flag:
+    effective_non_priority_flag = sub_task.non_priority_flag
+    if effective_non_priority_flag:
         update_data["weightage_priority"] = 0
         update_data["subtask_priority"] = SubTaskPriority.medium.value
+    elif request.request_type == SubTaskUpdateRequestType.create.value or "weightage_priority" in update_data:
+        _validate_raw_weightage_priority(
+            update_data.get("weightage_priority"),
+            False,
+            required=request.request_type == SubTaskUpdateRequestType.create.value,
+        )
 
     _validate_sub_task_update_constraints(db, sub_task, update_data)
     _apply_sub_task_update(db, sub_task, update_data)
 
+    if request.request_type == SubTaskUpdateRequestType.create.value:
+        request.status = SubTaskUpdateRequestStatus.approved.value
+        request.review_comment = payload.comment
+        request.reviewed_by = current_user.id
+        request.reviewed_at = datetime.utcnow()
+        db.flush()
+
     if target_task_id != old_task_id:
         old_task = validate_task(db, old_task_id)
-        if not old_task.non_priority_flag:
-            _rebalance_task_weightage_priorities(db, old_task_id)
-        if not target_task.non_priority_flag:
-            _rebalance_task_weightage_priorities(db, target_task_id)
-    elif not target_task.non_priority_flag and "weightage_priority" in update_data:
+        _rebalance_task_weightage_priorities(db, old_task_id)
+        _rebalance_task_weightage_priorities(db, target_task_id)
+    elif "weightage_priority" in update_data:
         _rebalance_task_weightage_priorities(db, target_task_id)
 
-    request.status = SubTaskUpdateRequestStatus.approved.value
-    request.review_comment = payload.comment
-    request.reviewed_by = current_user.id
-    request.reviewed_at = datetime.utcnow()
+    if request.request_type != SubTaskUpdateRequestType.create.value:
+        request.status = SubTaskUpdateRequestStatus.approved.value
+        request.review_comment = payload.comment
+        request.reviewed_by = current_user.id
+        request.reviewed_at = datetime.utcnow()
 
     log_audit_event(
         db=db,
