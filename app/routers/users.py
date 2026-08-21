@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.core.audit import log_audit_event
 from app.core.errors import api_error
-from app.core.security import get_db, hash_password, is_supported_password_hash, require_role, get_current_user
+from app.core.security import get_db, hash_password, is_supported_password_hash, require_role
 from app.models.activity import Activity
 from app.models.audit_log import AuditLog
 from app.models.sub_task import SubTask
@@ -221,11 +221,4 @@ def delete_user(
 
     return {"message": "User deleted successfully"}
 
-    
-@router.get("user_departments")
-def get_my_departments(current_user: User = Depends(get_current_user)):
-    return [{
-        "id": department.id,
-        "name": department.name,
-    }
-    for department in current_user.departments]
+
