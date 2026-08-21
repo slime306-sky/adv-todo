@@ -220,3 +220,12 @@ def delete_user(
         )
 
     return {"message": "User deleted successfully"}
+
+    
+@router.get("user_departments")
+def get_my_departments(current_user: User = Depends(get_current_user)):
+    return [{
+        "id": department.id,
+        "name": department.name,
+    }
+    for department in current_user.departments]
