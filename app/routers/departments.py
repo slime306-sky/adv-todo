@@ -216,7 +216,7 @@ def delete_department(
     return {"message": "Department deleted successfully"}
 
 
-@router.get("user_departments")
+@router.get("/user_departments")
 def get_my_departments(current_user: User = Depends(get_current_user)):
     return [{
         "id": department.id,
