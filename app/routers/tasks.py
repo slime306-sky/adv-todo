@@ -1463,6 +1463,8 @@ def get_all_tasks_admin(
                 "end_date": task.end_date,
                 "created_by": _serialize_user_reference(task.creator, task.created_by),
                 "department": _serialize_task_department_reference(task),
+                "department_id": task.department_id,
+                "category": _serialize_task_category_reference(task),
             }
         )
 
