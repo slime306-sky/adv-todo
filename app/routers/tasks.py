@@ -1204,6 +1204,56 @@ def get_my_tasks(
     }
 
 
+@router.get("/incomplete-tasks", response_model=TaskListResponse)
+def get_incomplete_tasks(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=10, ge=1, le=100),
+    search: str | None = Query(default=None),
+):
+    query = db.query(Task).options(
+        selectinload(Task.sub_tasks),
+        selectinload(Task.department),
+        selectinload(Task.category),
+        selectinload(Task.creator).selectinload(User.departments),
+        selectinload(Task.sub_tasks).selectinload(SubTask.assignee).selectinload(User.departments),
+    ).filter(Task.status != TaskStatus.complete.value)
+
+    if current_user.role != "admin":
+        query = query.filter(
+            or_(
+                Task.created_by == current_user.id,
+                Task.id.in_(db.query(SubTask.task_id).filter(SubTask.assigned_to == current_user.id)),
+            )
+        )
+
+    if search:
+        search_pattern = f"%{search.strip()}%"
+        query = query.filter(
+            or_(Task.title.ilike(search_pattern), Task.description.ilike(search_pattern))
+        )
+
+    total = query.count()
+    items = (
+        query.order_by(Task.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+
+    return {
+        "items": [
+            _serialize_task(task, include_sub_tasks=True, db=db, current_user=current_user)
+            for task in items
+        ],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": (total + page_size - 1) // page_size,
+    }
+
+
 @router.put("/tasks/{task_id}/complete")
 def complete_task(
     task_id: int,
@@ -1663,12 +1713,12 @@ def get_task_timeline(
         behind_percentage = 0.0
 
     # Determine status based on actual vs estimated hours
-    if total_actual_hours > total_estimated_hours:
+    if total_actual_hours < total_expected_hours:
         status = "behind"
-    elif total_actual_hours == total_estimated_hours:
+    elif total_actual_hours == total_expected_hours:
         status = "on time"
     else:
-        status = "early"
+        status = "ahead"
 
     # Calculate expected_days from expected_hours (non-decimal)
     expected_days = int(total_expected_hours / 24) if total_expected_hours > 0 else 0

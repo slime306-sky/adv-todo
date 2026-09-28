@@ -383,6 +383,12 @@ This document lists the current endpoints, descriptions, sample request payloads
   - Query: `page`, `page_size`, `search`, `status`
   - Success response: paginated task list with sub-tasks.
 
+- GET /incomplete-tasks
+  - Description: List tasks whose status is not `complete`. Admins see all incomplete tasks; other users see incomplete tasks they created or are assigned to.
+  - Auth: Authenticated user
+  - Query: `page`, `page_size`, `search`
+  - Success response: paginated task list with sub-tasks.
+
 - GET /tasks
   - Description: Admin list of all tasks.
   - Auth: Admin

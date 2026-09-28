@@ -510,6 +510,12 @@ def _create_sub_task_record(
 ):
     task = validate_task(db, sub_task_payload.task_id)
     ensure_user_can_manage_task(task, current_user)
+    if task.status == TaskStatus.complete.value:
+        raise api_error(
+            status_code=409,
+            code="TASK_ALREADY_COMPLETE",
+            message="Cannot add a sub-task to a completed task",
+        )
     task_non_priority_flag = task.non_priority_flag
 
     assigned_user = resolve_assigned_user(
