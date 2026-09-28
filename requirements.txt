@@ -5,3 +5,4 @@ python-jose
 passlib[argon2]
 psycopg2-binary
 python-multipart
+psycopg[binary]
