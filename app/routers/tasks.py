@@ -55,7 +55,12 @@ from app.schemas.task import (
     TaskUpdate,
 )
 
-from app.core.notifications import notify_task_requested, notify_task_decision, notify_task_completed
+from app.core.notifications import (
+    notify_task_requested,
+    notify_task_decision,
+    notify_task_completed,
+    notify_task_assigned,
+)
 
 router = APIRouter(tags=["tasks"])
 
@@ -811,12 +816,59 @@ def create_task(
         },
     )
     db.commit()
-    return {
-        **_serialize_task(new_task, include_sub_tasks=True, db=db, current_user=current_user),
-        "sub_tasks": [_serialize_sub_task(sub_task) for sub_task in created_sub_tasks],
-        "sub_tasks_created_count": len(created_sub_tasks),
+
+    # Send task assignment email to each assigned user.
+    assigned_user_ids = {
+        sub_task.assigned_to
+        for sub_task in created_sub_tasks
+        if sub_task.assigned_to is not None
     }
 
+    for user_id in assigned_user_ids:
+        assigned_user = (
+            db.query(User)
+            .filter(User.id == user_id)
+            .first()
+        )
+
+        if assigned_user and assigned_user.email:
+            user_subtasks = [
+                sub_task
+                for sub_task in created_sub_tasks
+                if sub_task.assigned_to == user_id
+            ]
+
+            try:
+                notify_task_assigned(
+                    db,
+                    task=new_task,
+                    assigned_to=assigned_user,
+                    assigned_by=current_user,
+                    subtasks=user_subtasks,
+                )
+                db.commit()
+            except Exception:
+                db.rollback()
+                logging.getLogger(__name__).exception(
+                    "Failed to queue task assignment email "
+                    "for task %s and user %s",
+                    new_task.id,
+                    user_id,
+                )
+
+    return {
+        **_serialize_task(
+            new_task,
+            include_sub_tasks=True,
+            db=db,
+            current_user=current_user,
+        ),
+        "sub_tasks": [
+            _serialize_sub_task(sub_task)
+            for sub_task in created_sub_tasks
+        ],
+        "sub_tasks_created_count": len(created_sub_tasks),
+    }
 
 @router.get("/task-creation-requests/my", response_model=TaskCreationRequestListResponse)
 def get_my_task_creation_requests(
@@ -1133,6 +1185,30 @@ def approve_task_creation_request(
                 for st in created_sub_tasks
             ],
         )
+
+        assigned_user_ids = {
+            subtask.assigned_to
+            for subtask in created_sub_tasks
+            if subtask.assigned_to is not None
+        }
+
+        for user_id in assigned_user_ids:
+            assigned_user = db.query(User).filter(User.id == user_id).first()
+
+            if assigned_user and assigned_user.email:
+                user_subtasks = [
+                    subtask
+                    for subtask in created_sub_tasks
+                    if subtask.assigned_to == user_id
+                ]
+
+                notify_task_assigned(
+                    db,
+                    task=new_task,
+                    assigned_to=assigned_user,
+                    assigned_by=current_user,
+                    subtasks=user_subtasks,
+                )
 
         db.flush()
         db.commit()

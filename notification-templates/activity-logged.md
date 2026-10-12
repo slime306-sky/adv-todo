@@ -1,5 +1,5 @@
 ---
-subject: "[adv-todo] Activity logged: {{ activity.title }}"
+subject: "Activity logged: {{ activity.title }}"
 ---
 
 # New activity logged

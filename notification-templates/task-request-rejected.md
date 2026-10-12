@@ -1,5 +1,5 @@
 ---
-subject: "[adv-todo] Task request rejected: {{ task.title }}"
+subject: "Task request rejected: {{ task.title }}"
 ---
 
 # Your task request was rejected

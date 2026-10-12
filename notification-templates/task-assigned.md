@@ -1,5 +1,5 @@
 ---
-subject: "[adv-todo] Task assigned: {{ task.title }}"
+subject: "Task assigned: {{ task.title }}"
 ---
 
 # A task has been assigned to you
@@ -27,6 +27,6 @@ Hello {{ recipient.username }},
 No subtasks were included.
 {% endif %}
 
-Please open adv-todo to view the task and begin working.
+Please open todo to view the task and begin working.
 
 — TMS

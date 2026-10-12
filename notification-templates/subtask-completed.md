@@ -1,5 +1,5 @@
 ---
-subject: "[adv-todo] Subtask completed: {{ subtask.title }}"
+subject: "Subtask completed: {{ subtask.title }}"
 ---
 
 # Subtask completed
@@ -12,6 +12,6 @@ A subtask has been marked as complete.
 - **Subtask:** {{ subtask.title }} (ID: {{ subtask.id }})
 - **Completed by:** {{ completed_by.username }}
 
-Please open adv-todo to review the task's progress.
+Please open todo to review the task's progress.
 
 — TMS

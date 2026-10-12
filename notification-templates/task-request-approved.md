@@ -1,5 +1,5 @@
 ---
-subject: "[adv-todo] Task request approved: {{ task.title }}"
+subject: "Task request approved: {{ task.title }}"
 ---
 
 # Your task request was approved
@@ -27,6 +27,6 @@ Good news! Your task request has been approved.
 {% endfor %}
 {% endif %}
 
-Please open adv-todo to view the full task details.
+Please open todo to view the full task details.
 
 — TMS

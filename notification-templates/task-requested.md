@@ -1,5 +1,5 @@
 ---
-subject: "[adv-todo] New task request #{{ request.id }}"
+subject: "New task request #{{ request.id }}"
 ---
 
 # New task request
