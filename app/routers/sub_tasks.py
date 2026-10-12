@@ -23,42 +23,10 @@ from app.schemas.sub_task import (
     SubTaskUpdate,
 )
 
-from kathayati import notify
+from app.core.notifications import notify_subtask_assigned, notify_subtask_completed
 
 router = APIRouter(tags=["sub-tasks"])
 PRIORITY_TOTAL_TARGET = 100
-
-
-def _notify_subtask_assigned(db: Session, sub_task: SubTask, assigned_by: User):
-    recipient = (
-        db.query(User)
-        .filter(User.id == sub_task.assigned_to)
-        .first()
-    )
-
-    if not recipient or not recipient.email:
-        return
-
-    task = db.query(Task).filter(Task.id == sub_task.task_id).first()
-    if not task:
-        return
-
-    notify(
-        template="subtask-assigned",
-        channel="resend",
-        recipient=recipient.email,
-        data={
-            "recipient": {"username": recipient.username},
-            "assigned_by": {"username": assigned_by.username},
-            "task": {"title": task.title},
-            "subtask": {
-                "id": sub_task.id,
-                "title": sub_task.title,
-                "description": sub_task.description or "",
-            },
-        },
-        connection=db.connection(),
-    )
 
 def _has_pending_create_request(db: Session, sub_task_id: int) -> bool:
     """Check if a SubTask has a pending CREATE approval request."""
@@ -675,7 +643,7 @@ def _create_sub_task_record(
         current_user.role == "admin"
         and new_sub_task.assigned_to is not None
     ):
-        _notify_subtask_assigned(db, new_sub_task, current_user)
+        notify_subtask_assigned(db, new_sub_task, current_user)
 
     db.commit()
     db.refresh(new_sub_task)
@@ -928,7 +896,7 @@ def update_sub_task(
         and sub_task.assigned_to != old_assigned_to
         and current_user.role == "admin"
     ):
-        _notify_subtask_assigned(db, sub_task, current_user)
+        notify_subtask_assigned(db, sub_task, current_user)
 
     db.commit()
     db.refresh(sub_task)
@@ -1004,6 +972,13 @@ def complete_sub_task(
     db.flush()
 
     sync_task_completion_status(db, sub_task.task_id)
+
+    notify_subtask_completed(
+        db,
+        task=task,
+        subtask=sub_task,
+        completed_by=current_user,
+    )
 
     log_audit_event(
         db=db,

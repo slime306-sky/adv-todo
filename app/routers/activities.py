@@ -18,6 +18,8 @@ from app.schemas.activity import (
     ActivityUpdate,
 )
 
+from app.core.notifications import notify_activity_logged
+
 router = APIRouter(tags=["activities"])
 
 
@@ -114,6 +116,15 @@ def create_activity(
     )
 
     db.add(new_activity)
+
+    notify_activity_logged(
+        db,
+        activity_title=new_activity.title,
+        task=task,
+        subtask=sub_task,
+        created_by=current_user,
+    )
+
     db.commit()
     db.refresh(new_activity)
     log_audit_event(

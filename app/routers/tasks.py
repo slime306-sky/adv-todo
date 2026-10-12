@@ -55,6 +55,8 @@ from app.schemas.task import (
     TaskUpdate,
 )
 
+from app.core.notifications import notify_task_requested, notify_task_decision, notify_task_completed
+
 router = APIRouter(tags=["tasks"])
 
 
@@ -746,6 +748,13 @@ def create_task(
         db.add(creation_request)
         db.flush()
 
+        notify_task_requested(
+            db,
+            request_id=creation_request.id,
+            task_title=task.title,
+            requested_by=current_user,
+        )
+
         log_audit_event(
             db=db,
             action="CREATE",
@@ -1094,6 +1103,37 @@ def approve_task_creation_request(
             details=audit_details,
         )
 
+        requester = (
+            db.query(User)
+            .filter(User.id == request.requested_by)
+            .first()
+        )
+
+        notify_task_decision(
+            db,
+            request_id=request.id,
+            task_title=new_task.title,
+            requested_by=requester,
+            approved=True,
+            reviewed_by=current_user,
+            comment=request.review_comment,
+            task_id=new_task.id,
+            subtasks=[
+                {
+                    "id": st.id,
+                    "title": st.title,
+                    "assignee": (
+                        st.assignee.username
+                        if st.assignee
+                        else "Unassigned"
+                    ),
+                    "estimated_days": st.estimated_days or 0,
+                    "estimated_hours": st.estimated_hours or 0,
+                }
+                for st in created_sub_tasks
+            ],
+        )
+
         db.flush()
         db.commit()
         db.refresh(request)
@@ -1149,6 +1189,23 @@ def reject_task_creation_request(
         message="Task creation request rejected",
         details={"requested_by": request.requested_by},
     )
+
+    requester = (
+        db.query(User)
+        .filter(User.id == request.requested_by)
+        .first()
+    )
+
+    notify_task_decision(
+        db,
+        request_id=request.id,
+        task_title="Task creation request",
+        requested_by=requester,
+        approved=False,
+        reviewed_by=current_user,
+        comment=request.review_comment,
+    )
+
     db.commit()
     db.refresh(request)
     return _serialize_task_creation_request(request)
@@ -1268,6 +1325,13 @@ def complete_task(
     ensure_user_can_manage_task(task, current_user)
 
     task.status = TaskStatus.complete.value
+
+    notify_task_completed(
+        db,
+        task=task,
+        completed_by=current_user,
+    )
+
     log_audit_event(
         db=db,
         action="COMPLETE",
