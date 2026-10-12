@@ -1472,6 +1472,38 @@ def approve_task_update_request(
         message="Task update request approved",
         details={"task_id": request.task_id},
     )
+
+    requester = (
+        db.query(User)
+        .filter(User.id == request.requested_by)
+        .first()
+    )
+
+    notify_task_decision(
+        db,
+        request_id=request.id,
+        task_title=new_task.title,
+        requested_by=requester,
+        approved=True,
+        reviewed_by=current_user,
+        comment=request.review_comment,
+        task_id=new_task.id,
+        subtasks=[
+            {
+                "id": st.id,
+                "title": st.title,
+                "assignee": (
+                    st.assignee.username
+                    if st.assignee
+                    else "Unassigned"
+                ),
+                "estimated_days": st.estimated_days or 0,
+                "estimated_hours": st.estimated_hours or 0,
+            }
+            for st in created_sub_tasks
+        ],
+    )
+
     db.commit()
     db.refresh(request)
     return _serialize_task_update_request(request)
@@ -1509,6 +1541,23 @@ def reject_task_update_request(
         message="Task update request rejected",
         details={"task_id": request.task_id},
     )
+
+    requester = (
+        db.query(User)
+        .filter(User.id == request.requested_by)
+        .first()
+    )
+
+    notify_task_decision(
+        db,
+        request_id=request.id,
+        task_title="Task creation request",
+        requested_by=requester,
+        approved=False,
+        reviewed_by=current_user,
+        comment=request.review_comment,
+    )
+
     db.commit()
     db.refresh(request)
     return _serialize_task_update_request(request)
