@@ -6,3 +6,4 @@ passlib[argon2]
 psycopg2-binary
 python-multipart
 psycopg[binary]
+Kathayati @ git+https://github.com/slime306-sky/Kathayati.git@v0.1.0

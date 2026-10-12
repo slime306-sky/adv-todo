@@ -22,6 +22,8 @@ from app.models.category import Category
 from app.routers import activities, audit_logs, auth, categories, dashboard, departments, sub_tasks, tasks, users
 from sqlalchemy.exc import SQLAlchemyError
 
+from kathayati import init_db
+
 
 def _ensure_subtask_weightage_check():
     """Add DB-level weightage range check on Postgres."""
@@ -559,6 +561,7 @@ def _initialize_database_with_retry() -> None:
 @app.on_event("startup")
 def log_invalid_password_hash_count():
     _initialize_database_with_retry()
+    init_db()
 
     db = SessionLocal()
     try:
