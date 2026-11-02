@@ -30,7 +30,6 @@ router = APIRouter(tags=["activities"])
 
 
 def _has_pending_create_request(db: Session, sub_task_id: int) -> bool:
-    """Check if a SubTask has a pending CREATE approval request."""
     request = (
         db.query(SubTaskUpdateRequest)
         .filter(SubTaskUpdateRequest.sub_task_id == sub_task_id)
@@ -48,7 +47,6 @@ def _has_pending_create_request(db: Session, sub_task_id: int) -> bool:
 
 
 def _has_rejected_create_request(db: Session, sub_task_id: int) -> bool:
-    """Check if a SubTask has a rejected CREATE approval request."""
     request = (
         db.query(SubTaskUpdateRequest)
         .filter(SubTaskUpdateRequest.sub_task_id == sub_task_id)
@@ -424,11 +422,15 @@ def get_sub_task_activities(
         "total_pages": (total + page_size - 1) // page_size,
     }
 
+
+# GET ALL ACTIVITIES
+# Admin: sees all activities.
+# Regular user: sees only activities they created.
 @router.get(
-    "/activities_by_id",
+    "/activities",
     response_model=ActivityListResponse,
 )
-def get_activities_by_id(
+def get_activities(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
     page: int = Query(default=1, ge=1),
@@ -476,3 +478,34 @@ def get_activities_by_id(
         "page_size": page_size,
         "total_pages": (total + page_size - 1) // page_size,
     }
+
+
+# GET A SINGLE ACTIVITY BY ID
+# Admin: can see any activity.
+# Regular user: can see only their own activity.
+@router.get(
+    "/activity/{activity_id}",
+    response_model=ActivityResponse,
+)
+def get_activity_by_id(
+    activity_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    query = db.query(Activity).filter(Activity.id == activity_id)
+
+    if current_user.role != "admin":
+        query = query.filter(
+            Activity.created_by == current_user.id
+        )
+
+    activity = query.first()
+
+    if not activity:
+        raise api_error(
+            status_code=404,
+            code="ACTIVITY_NOT_FOUND",
+            message="Activity not found",
+        )
+
+    return _serialize_activity(activity)
