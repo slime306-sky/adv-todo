@@ -7,17 +7,23 @@ from app.core.errors import api_error
 from app.core.security import get_current_user, get_db, require_role
 from app.models.activity import Activity
 from app.models.sub_task import SubTask
-from app.models.sub_task_update_request import SubTaskUpdateRequest, SubTaskUpdateRequestStatus, SubTaskUpdateRequestType
+from app.models.sub_task_update_request import (
+    SubTaskUpdateRequest,
+    SubTaskUpdateRequestStatus,
+    SubTaskUpdateRequestType,
+)
 from app.models.task import Task
 from app.models.user import User
-from app.routers.sub_tasks import ensure_user_can_manage_sub_task,ensure_user_can_manage_task
+from app.routers.sub_tasks import (
+    ensure_user_can_manage_sub_task,
+    ensure_user_can_manage_task,
+)
 from app.schemas.activity import (
     ActivityCreate,
     ActivityListResponse,
     ActivityResponse,
     ActivityUpdate,
 )
-
 from app.core.notifications import notify_activity_logged
 
 router = APIRouter(tags=["activities"])
@@ -28,19 +34,32 @@ def _has_pending_create_request(db: Session, sub_task_id: int) -> bool:
     request = (
         db.query(SubTaskUpdateRequest)
         .filter(SubTaskUpdateRequest.sub_task_id == sub_task_id)
-        .filter(SubTaskUpdateRequest.request_type == SubTaskUpdateRequestType.create.value)
-        .filter(SubTaskUpdateRequest.status == SubTaskUpdateRequestStatus.pending.value)
+        .filter(
+            SubTaskUpdateRequest.request_type
+            == SubTaskUpdateRequestType.create.value
+        )
+        .filter(
+            SubTaskUpdateRequest.status
+            == SubTaskUpdateRequestStatus.pending.value
+        )
         .first()
     )
     return request is not None
+
 
 def _has_rejected_create_request(db: Session, sub_task_id: int) -> bool:
     """Check if a SubTask has a rejected CREATE approval request."""
     request = (
         db.query(SubTaskUpdateRequest)
         .filter(SubTaskUpdateRequest.sub_task_id == sub_task_id)
-        .filter(SubTaskUpdateRequest.request_type == SubTaskUpdateRequestType.create.value)
-        .filter(SubTaskUpdateRequest.status == SubTaskUpdateRequestStatus.rejected.value)
+        .filter(
+            SubTaskUpdateRequest.request_type
+            == SubTaskUpdateRequestType.create.value
+        )
+        .filter(
+            SubTaskUpdateRequest.status
+            == SubTaskUpdateRequestStatus.rejected.value
+        )
         .first()
     )
     return request is not None
@@ -63,7 +82,10 @@ def _serialize_activity(activity: Activity):
         "date": activity.date,
         "status": activity.status,
         "sub_task_id": activity.sub_task_id,
-        "created_by": _serialize_user_reference(activity.creator, activity.created_by),
+        "created_by": _serialize_user_reference(
+            activity.creator,
+            activity.created_by,
+        ),
     }
 
 
@@ -73,7 +95,12 @@ def create_activity(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    sub_task = db.query(SubTask).filter(SubTask.id == activity.sub_task_id).first()
+    sub_task = (
+        db.query(SubTask)
+        .filter(SubTask.id == activity.sub_task_id)
+        .first()
+    )
+
     if not sub_task:
         raise api_error(
             status_code=404,
@@ -82,6 +109,7 @@ def create_activity(
         )
 
     task = db.query(Task).filter(Task.id == sub_task.task_id).first()
+
     if not task:
         raise api_error(
             status_code=404,
@@ -91,7 +119,6 @@ def create_activity(
 
     ensure_user_can_manage_sub_task(sub_task, current_user, task)
 
-    # Prevent activities on subtasks with pending CREATE requests
     if _has_pending_create_request(db, activity.sub_task_id):
         raise api_error(
             status_code=409,
@@ -127,6 +154,7 @@ def create_activity(
 
     db.commit()
     db.refresh(new_activity)
+
     log_audit_event(
         db=db,
         action="CREATE",
@@ -134,8 +162,13 @@ def create_activity(
         entity_id=new_activity.id,
         user_id=current_user.id,
         message="Activity created",
-        details={"sub_task_id": new_activity.sub_task_id, "title": new_activity.title, "note": new_activity.note},
+        details={
+            "sub_task_id": new_activity.sub_task_id,
+            "title": new_activity.title,
+            "note": new_activity.note,
+        },
     )
+
     db.commit()
     return _serialize_activity(new_activity)
 
@@ -147,7 +180,12 @@ def update_activity(
     db: Session = Depends(get_db),
     admin: User = Depends(require_role("admin")),
 ):
-    activity = db.query(Activity).filter(Activity.id == activity_id).first()
+    activity = (
+        db.query(Activity)
+        .filter(Activity.id == activity_id)
+        .first()
+    )
+
     if not activity:
         raise api_error(
             status_code=404,
@@ -175,7 +213,12 @@ def update_activity(
         )
 
     if "sub_task_id" in update_data:
-        sub_task = db.query(SubTask).filter(SubTask.id == update_data["sub_task_id"]).first()
+        sub_task = (
+            db.query(SubTask)
+            .filter(SubTask.id == update_data["sub_task_id"])
+            .first()
+        )
+
         if not sub_task:
             raise api_error(
                 status_code=404,
@@ -195,8 +238,10 @@ def update_activity(
         message="Activity updated",
         details={"updated_fields": list(update_data.keys())},
     )
+
     db.commit()
     db.refresh(activity)
+
     return _serialize_activity(activity)
 
 
@@ -206,7 +251,12 @@ def delete_activity(
     db: Session = Depends(get_db),
     admin: User = Depends(require_role("admin")),
 ):
-    activity = db.query(Activity).filter(Activity.id == activity_id).first()
+    activity = (
+        db.query(Activity)
+        .filter(Activity.id == activity_id)
+        .first()
+    )
+
     if not activity:
         raise api_error(
             status_code=404,
@@ -223,12 +273,17 @@ def delete_activity(
         message="Activity deleted",
         details={"title": activity.title},
     )
+
     db.delete(activity)
     db.commit()
+
     return {"message": "Activity deleted successfully"}
 
 
-@router.get("/tasks/{task_id}/activities", response_model=ActivityListResponse)
+@router.get(
+    "/tasks/{task_id}/activities",
+    response_model=ActivityListResponse,
+)
 def get_task_activities(
     task_id: int,
     db: Session = Depends(get_db),
@@ -240,8 +295,13 @@ def get_task_activities(
     sub_task_id: int | None = Query(default=None),
 ):
     task = db.query(Task).filter(Task.id == task_id).first()
+
     if not task:
-        raise api_error(status_code=404, code="TASK_NOT_FOUND", message="Task not found")
+        raise api_error(
+            status_code=404,
+            code="TASK_NOT_FOUND",
+            message="Task not found",
+        )
 
     ensure_user_can_manage_task(task, user)
 
@@ -251,15 +311,13 @@ def get_task_activities(
         .filter(SubTask.task_id == task_id)
     )
 
-
-
     if sub_task_id is not None:
         query = query.filter(Activity.sub_task_id == sub_task_id)
 
     if status:
         query = query.filter(Activity.status == status)
 
-    if search:
+    if search and search.strip():
         search_pattern = f"%{search.strip()}%"
         query = query.filter(
             or_(
@@ -269,6 +327,7 @@ def get_task_activities(
         )
 
     total = query.count()
+
     items = (
         query.order_by(Activity.id.desc())
         .offset((page - 1) * page_size)
@@ -278,6 +337,87 @@ def get_task_activities(
 
     return {
         "items": [_serialize_activity(item) for item in items],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": (total + page_size - 1) // page_size,
+    }
+
+
+@router.get(
+    "/subtasks/{sub_task_id}/activities",
+    response_model=ActivityListResponse,
+)
+def get_sub_task_activities(
+    sub_task_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=10, ge=1, le=100),
+    search: str | None = Query(default=None),
+    status: str | None = Query(default=None),
+):
+    sub_task = (
+        db.query(SubTask)
+        .filter(SubTask.id == sub_task_id)
+        .first()
+    )
+
+    if not sub_task:
+        raise api_error(
+            status_code=404,
+            code="SUBTASK_NOT_FOUND",
+            message="Sub task not found",
+        )
+
+    task = (
+        db.query(Task)
+        .filter(Task.id == sub_task.task_id)
+        .first()
+    )
+
+    if not task:
+        raise api_error(
+            status_code=404,
+            code="TASK_NOT_FOUND",
+            message="Task not found",
+        )
+
+    ensure_user_can_manage_sub_task(sub_task, current_user, task)
+
+    query = (
+        db.query(Activity)
+        .filter(Activity.sub_task_id == sub_task_id)
+    )
+
+    if status:
+        query = query.filter(Activity.status == status)
+
+    if search and search.strip():
+        search_pattern = f"%{search.strip()}%"
+        query = query.filter(
+            or_(
+                Activity.title.ilike(search_pattern),
+                Activity.description.ilike(search_pattern),
+                Activity.note.ilike(search_pattern),
+            )
+        )
+
+    total = query.count()
+
+    activities = (
+        query
+        .order_by(Activity.date.desc(), Activity.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+
+    return {
+        "items": [
+            _serialize_activity(activity)
+            for activity in activities
+        ],
         "total": total,
         "page": page,
         "page_size": page_size,
