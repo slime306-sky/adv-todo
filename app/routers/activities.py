@@ -423,3 +423,56 @@ def get_sub_task_activities(
         "page_size": page_size,
         "total_pages": (total + page_size - 1) // page_size,
     }
+
+@router.get(
+    "/activities_by_id",
+    response_model=ActivityListResponse,
+)
+def get_activities_by_id(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=10, ge=1, le=100),
+    search: str | None = Query(default=None),
+    status: str | None = Query(default=None),
+):
+    query = db.query(Activity)
+
+    if current_user.role != "admin":
+        query = query.filter(
+            Activity.created_by == current_user.id
+        )
+
+    if status:
+        query = query.filter(Activity.status == status)
+
+    if search and search.strip():
+        search_pattern = f"%{search.strip()}%"
+        query = query.filter(
+            or_(
+                Activity.title.ilike(search_pattern),
+                Activity.description.ilike(search_pattern),
+                Activity.note.ilike(search_pattern),
+            )
+        )
+
+    total = query.count()
+
+    activities = (
+        query
+        .order_by(Activity.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+
+    return {
+        "items": [
+            _serialize_activity(activity)
+            for activity in activities
+        ],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": (total + page_size - 1) // page_size,
+    }
